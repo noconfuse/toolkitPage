@@ -2,16 +2,16 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import MuiThemeProvider from 'material-ui/styles/MuiThemeProvider';
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
-import Layout from './components/Layout';
-import Task from './components/Task';
-import Notes from './components/Notes';
-import Category from './components/Category';
-import Address from './components/Address';
-import Tags from './components/Tags'
+// import Layout from './components/Layout';
+// import Task from './components/Task';
+// import Notes from './components/Notes';
+// import Category from './components/Category';
+// import Address from './components/Address';
+// import Tags from './components/Tags'
 import Landing from './views/Landing'
-import User from './components/User'
-import Login from './components/Login'
-import Register from './components/Register'
+// import User from './components/User'
+// import Login from './components/Login'
+// import Register from './components/Register'
 import './index.css';
 // import App from './App';
 import reportWebVitals from './reportWebVitals';

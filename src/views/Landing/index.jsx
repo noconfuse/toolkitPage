@@ -1,6 +1,5 @@
 import React from 'react';
 import Calendar from '../../components/Calendar'
-import bg from '../../assets/images/bg.jpg';
 import './index.scss';
 
 
