@@ -5,8 +5,10 @@ import MenuItem from 'material-ui/MenuItem';
 import FlatButton from 'material-ui/FlatButton';
 import Draggable from 'react-draggable';
 import FontIcon from 'material-ui/FontIcon'
-import utils from '../utils'
-import Calendardetail from './calendetail';
+import utils from '../../utils'
+import Calendardetail from '../calendetail';
+import './index.scss';
+
 const days = ['一','二','三','四','五','六','日'];
 const style = {
     dragArea:{

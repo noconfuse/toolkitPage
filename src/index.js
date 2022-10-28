@@ -8,7 +8,7 @@ import Notes from './components/Notes';
 import Category from './components/Category';
 import Address from './components/Address';
 import Tags from './components/Tags'
-import Landing from './components/Landing'
+import Landing from './views/Landing'
 import User from './components/User'
 import Login from './components/Login'
 import Register from './components/Register'
