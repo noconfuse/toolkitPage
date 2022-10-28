@@ -24,7 +24,6 @@ export default class Calendardetail extends React.Component{
         this.state = {dayDetails:props.data};
     }
     render(){
-        console.log(this.props.data);
         let dayDetail = this.props.data;
         return (
             <div className="calendarDetail">
