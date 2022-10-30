@@ -1,9 +1,9 @@
 import React from 'react';
-import TextField from 'material-ui/TextField'
-import Checkbox from 'material-ui/Checkbox';
-import Divider from 'material-ui/Divider'
-import RaisedButton from 'material-ui/RaisedButton'
-import Snackbar from 'material-ui/Snackbar'
+import TextField from '@mui/material/TextField'
+import Checkbox from '@mui/material/Checkbox';
+import Divider from '@mui/material/Divider'
+import RaisedButton from '@mui/material/Button'
+import Snackbar from '@mui/material/Snackbar'
 const style = {
     registerBox:{
         flexGrow:1,

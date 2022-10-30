@@ -1,12 +1,11 @@
 import React from 'react';
-import DropDownMenu from 'material-ui/DropDownMenu';
-import MenuItem from 'material-ui/MenuItem';
-import FlatButton from 'material-ui/FlatButton';
+import MenuItem from '@mui/material/MenuItem';
 import Draggable from 'react-draggable';
-import FontIcon from 'material-ui/FontIcon'
-import utils from '../../utils'
+import Icon from '@mui/material/Icon'
+import utils from '../../utils/calendar'
 import Calendardetail from '../calendetail';
 import './index.scss';
+import { Button, Select } from '@mui/material';
 
 const days = ['一','二','三','四','五','六','日'];
 const style = {
@@ -51,10 +50,10 @@ const style = {
 const yearItems = [],
       monthItems = [];
 for(let i=1900;i<=2060;i++){
-    yearItems.push(<MenuItem value={i} primaryText={`${i}年`} key={i}/>)
+    yearItems.push(<MenuItem value={i}  key={i}>{`${i}年`}</MenuItem>)
 }
 for(let i=1;i<=12;i++){
-    monthItems.push(<MenuItem value={i} primaryText={`${i}月`} key={i}/>)
+    monthItems.push(<MenuItem value={i}  key={i}>{`${i}月`}</MenuItem>)
 }
 /*
 * 思路：
@@ -159,33 +158,26 @@ export default class Calendar extends React.Component {
                 <div className='calendar'>
                     <div>
                         <h4 className="dragArea flex-between">
-                            <FontIcon className="material-icons" onClick={this.lastMonth}>chevron_left</FontIcon>日历<FontIcon className="material-icons" onClick={this.nextMonth}>chevron_right</FontIcon></h4>
+                            <Icon className="material-icons" onClick={this.lastMonth}>chevron_left</Icon>日历<Icon className="material-icons" onClick={this.nextMonth}>chevron_right</Icon></h4>
                         <div className="flex-between">
-                            <DropDownMenu
-                                maxHeight={300}
+                            <Select
                                 value={this.state.selectYear}
                                 onChange={this.handleYearChange}
                                 style={style.selectYear}
-                                labelStyle={style.labelStyle}
-                                iconStyle={style.iconStyle}
                             >
                                 {yearItems}
-                            </DropDownMenu>
-                            <DropDownMenu
-                                maxHeight={300}
+                            </Select>
+                            <Select
                                 value={this.state.selectMonth+1}
                                 onChange={this.handleMonthChange}
                                 style={style.selectMonth}
-                                labelStyle={style.labelStyle}
-                                iconStyle={style.iconStyle}
                             >
                                 {monthItems}
-                            </DropDownMenu>
-                            <FlatButton
-                                primary={true}
-                                label="返回今天"
+                            </Select>
+                            <Button
+                                variant="text"
                                 style={style.flatButton}
-                            />
+                            >返回今天</Button>
                         </div>
                         <div className="line-blue margin-10"></div>
                         <table cellSpacing='0'>

@@ -1,14 +1,14 @@
 import React from 'react';
-import Paper from 'material-ui/Paper';
-import {Toolbar} from 'material-ui/Toolbar';
+import Paper from '@mui/material/Paper';
+import {Toolbar} from '@mui/material/Toolbar';
+import { indigo } from '@mui/material/colors';
 
-import {indigo50} from 'material-ui/styles/colors'
 const style = {
     toolbar:{
       background:'#fff'
     },
     main:{
-        background:indigo50,
+        background:indigo[50],
         height:"100%"
     },
     box:{
@@ -23,7 +23,7 @@ export default class User extends React.Component{
                     <div className="warpper">
                     </div>
                 </Toolbar>
-                <Paper className="warpper flex" style={style.box}>
+                <Paper className="flex warpper" style={style.box}>
                     <img src="/assets/images/small_bg.jpg" alt=""/>
                     {this.props.children}
                 </Paper>

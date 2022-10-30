@@ -1,7 +1,6 @@
 import React from 'react';
 import {Link} from 'react-router';
-import {List,ListItem} from 'material-ui/List';
-import ContentInbox from 'material-ui/svg-icons/content/inbox';
+import {List,ListItem} from '@mui/material/List';
 const SidebarLinks = [
     {
         name:'任务',

@@ -1,7 +1,7 @@
 import React from 'react';
-import Divider from 'material-ui/Divider'
-import TextField from 'material-ui/TextField'
-import RaisedButton from 'material-ui/RaisedButton'
+import Divider from '@mui/material/Divider'
+import TextField from '@mui/material/TextField'
+import RaisedButton from '@mui/material/Button'
 const style = {
     loginBox:{
         flexGrow:1,
