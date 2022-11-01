@@ -34,3 +34,52 @@ export  const  throttle = (func, delay,trailing)=>{
         }
     }
 }
+
+/**
+ * 防抖函数
+ * @param {Function} func 待执行函数
+ * @param {Number} delay 间隔
+ * @param {Boolean} immdiate 是否立即执行
+ * @returns 真正执行函数
+ */
+export const debounce =(func,delay,immdiate=false)=>{
+    let timer = null
+    let isInvoke = false
+    function _debounce(...arg) {
+      if (timer) clearTimeout(timer)
+      if (immdiate && !isInvoke) {
+        const result = func.apply(this, arg)
+        isInvoke = true
+      } else {
+        timer = setTimeout(() => {
+          const result = func.apply(this, arg)
+          isInvoke = false
+          timer = null
+        }, delay)
+      }
+  
+    }
+  
+    _debounce.cancel = function () {
+      if (timer) clearTimeout(timer)
+      timer = null
+      isInvoke = false
+    }
+  
+    return _debounce
+}
+
+
+export const str2utf8 = (str)=>{
+    if(window.TextDecoder){
+        var encoder = new TextEncoder('utf8');
+        var bytes = encoder.encode(str);
+        var result = '';
+        for(var i = 0; i < bytes.length; ++i) {
+            result += String.fromCharCode(bytes[i]);
+        }
+        return result;
+    }
+    return eval('\''+encodeURI(str).replace(/%/gm, '\\x')+'\'');
+}
+

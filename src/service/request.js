@@ -2,11 +2,13 @@ export const jsonp = (url,param={},paramName,callback)=>{
     if(typeof url != 'string'){
         throw new Error('url必须为字符串')
     }
-    url += '?'
+    url += '?';
+    let queryArr = []
     // 将param转为&拼接
     for(let key in param){
-        url += `&${key}=${param[key]}`
+        queryArr.push(`${key}=${param[key]}`);
     }
+    url += queryArr.join('&');
     //函数名需要加工(保持的函数名的唯一)
     let callbackName = 'fn' + Date.now() + Math.ceil(Math.random()*10)
     //加给对应的window
