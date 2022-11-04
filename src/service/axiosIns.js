@@ -2,7 +2,7 @@ import axios from 'axios';
 
 
 const axiosIns = axios.create({
-    baseURL:"//182.160.13.1:3001"
+    baseURL:"//web.deerblock.cn/webapi"
 })
 
 export default axiosIns;
