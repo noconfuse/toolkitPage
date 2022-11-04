@@ -21,7 +21,9 @@ body {
 }
 
 #root {
-  height: 100%;
+  background: black url('https://marcbruederlin.github.io/particles.js/img/background.jpg') no-repeat;
+  background-size: 100% auto;
+  min-height: 100%;
 }
 
 li {

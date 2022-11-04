@@ -119,7 +119,7 @@ export default function SearchInput() {
     return (
         <div className="w-2/6 max-w-3xl mx-auto bg-white rounded searchContainer">
             <div className="flex justify-between pl-3">
-                <InputBase startAdornment={ <Search></Search>} placeholder="搜一搜" className="flex-grow py-2 font-bold" onKeyUp={handleKeyUp} value={searchStr} onChange={(event)=>{
+                <InputBase startAdornment={ <Search></Search>} name="searchInput" placeholder="搜一搜" className="flex-grow py-2 font-bold" onKeyUp={handleKeyUp} value={searchStr} onChange={(event)=>{
                     setSearchStr(event.target.value);
                     getSuggestion(event.target.value)
                 }} onBlur={handleSearchInputBlur} onFocus={handleSearchInputFocus}></InputBase>
@@ -134,7 +134,8 @@ export default function SearchInput() {
                     )}
                 </Menu>
             </div>
-            {suggestionShow&&suggestionList.length?<List className="p-1 bg-white">
+            <label htmlFor="searchInput" onMouseDown={(e)=>{e.preventDefault()}}>
+            {suggestionShow&&suggestionList.length?<List className="p-1 bg-white" onClick={(e)=>{e.preventDefault()}}>
                 {suggestionList.map((list,index)=>{
                     return <ListItemButton selected={hoverSuggesionIndex===index} key={list.q}>
                         <ListItemText primary={list.q} onClick={(event)=>{
@@ -143,6 +144,8 @@ export default function SearchInput() {
                         </ListItemButton>
                 })}
             </List>:null}
+
+            </label>
 
         </div>
     )

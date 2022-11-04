@@ -41,6 +41,7 @@ export default function HotRank() {
     });
   }, []);
   return (
+      
     <Grid2 container rowSpacing={2} columnSpacing={{ xs: 1, sm: 2, md: 3 }}>
       {hotRankConfig.map((rank) => (
         <Grid2 xs={4} key={rank.rankName}>
@@ -67,9 +68,6 @@ export default function HotRank() {
                 );
               })}
             </ul>
-            {/* <div className="py-1 border-t border-solid border-slate-300">
-               
-            </div> */}
           </div>
         </Grid2>
       ))}
