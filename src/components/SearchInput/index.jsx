@@ -59,7 +59,6 @@ export default function SearchInput() {
     }, [searchTypeKey])
 
     const search = (searchStr)=>{
-        debugger
         if(currentSearch.searchUrl){
             const searchUrl = currentSearch.searchUrl.replace('${searchKey}',searchStr)
             window.open(searchUrl,'_blank')
@@ -118,9 +117,9 @@ export default function SearchInput() {
 
 
     return (
-        <div className="fixed w-6/12 max-w-3xl -translate-x-1/2 bg-white rounded-lg searchContainer left-1/2 bg-opacity-80 top-1/4">
+        <div className="w-2/6 max-w-3xl mx-auto bg-white rounded searchContainer">
             <div className="flex justify-between pl-3">
-                <InputBase startAdornment={ <Search></Search>} placeholder="搜一搜" className="flex-grow pt-4 pb-4 font-bold" onKeyUp={handleKeyUp} value={searchStr} onChange={(event)=>{
+                <InputBase startAdornment={ <Search></Search>} placeholder="搜一搜" className="flex-grow py-2 font-bold" onKeyUp={handleKeyUp} value={searchStr} onChange={(event)=>{
                     setSearchStr(event.target.value);
                     getSuggestion(event.target.value)
                 }} onBlur={handleSearchInputBlur} onFocus={handleSearchInputFocus}></InputBase>
@@ -135,7 +134,7 @@ export default function SearchInput() {
                     )}
                 </Menu>
             </div>
-            {suggestionShow&&suggestionList.length?<List className="p-1">
+            {suggestionShow&&suggestionList.length?<List className="p-1 bg-white">
                 {suggestionList.map((list,index)=>{
                     return <ListItemButton selected={hoverSuggesionIndex===index} key={list.q}>
                         <ListItemText primary={list.q} onClick={(event)=>{

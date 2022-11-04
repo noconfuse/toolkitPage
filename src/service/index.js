@@ -1,5 +1,8 @@
+import axiosIns from "./axiosIns";
 import TranslateEngine from "./baiduTranslate";
 import { jsonp } from "./request";
+
+
 
 export const fetchSuggestions = (searchStr)=>{
     const now = Date.now().valueOf();
@@ -25,4 +28,15 @@ export const translateText = (textStr,options={})=>{
 
 export const distinguish = (textStr)=>{
     return TranslateEngine.Instance().distinguish({textStr})
+}
+
+
+export const getHotRank = (queryType)=>{
+    return axiosIns({
+        method:"GET",
+        url:"rankList",
+        params:{
+            queryType:queryType
+        }
+    })
 }

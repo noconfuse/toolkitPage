@@ -1,23 +1,20 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#000000" />
-    <meta
-      name="description"
-      content="Web site created using create-react-app"
-    />
-    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
-    <link href="https://fonts.googleapis.com/icon?family=Material+Icons"
-          rel="stylesheet">
-    <!--
+
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Web site created using create-react-app" />
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
     -->
-    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
-    <!--
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+  <!--
       Notice the use of %PUBLIC_URL% in the tags above.
       It will be replaced with the URL of the `public` folder during the build.
       Only files inside the `public` folder can be referenced from the HTML.
@@ -26,12 +23,16 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
-    <title>鹿街</title>
-  </head>
-  <body>
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
-    <!--
+  <title>鹿街</title>
+</head>
+
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <canvas style="position: fixed;" id="bgCanvas"></canvas>
+  <div id="root">
+
+  </div>
+  <!--
       This HTML file is a template.
       If you open it directly in the browser, you will see an empty page.
 
@@ -41,5 +42,91 @@
       To begin the development, run `npm start` or `yarn start`.
       To create a production bundle, use `npm run build` or `yarn build`.
     -->
-  </body>
+
+  <script>
+    const canvas = document.getElementById('bgCanvas');
+    const gl = canvas.getContext('webgl2');
+    //顶点着色器 字符串
+    let baseVS = `#version 300 es
+        in vec2 a_Position; //顶点 二维坐标 
+        void main() {
+            gl_Position = vec4(a_Position.xy, 0.0 , 1.0);
+        }`;
+    //片元着色器 字符串
+    let baseFS = `#version 300 es
+        out vec4 color;
+        //下面是 uniform 字段定义部分 （仅教程，这里只实现两个基础 字段）
+        uniform vec3      iResolution;
+        uniform float     iTime;
+
+        //下面一行作为插入位置，它是一段特定的注释，作为识别并替换成 shadertoy片段 代码用。
+        void mainImage( out vec4 fragColor, in vec2 fragCoord )
+        {
+            // Normalized pixel coordinates (from 0 to 1)
+            vec2 uv = fragCoord/iResolution.xy;
+
+            // Time varying pixel color
+            vec3 col = 0.5 + 0.5*cos(iTime+uv.xyx+vec3(0,2,4));
+
+            // Output to screen
+            fragColor = vec4(col,1.0);
+        }
+
+        void main(){
+            vec4 col = vec4(0.0 , 0.0 , 0.0 , 1.0);
+            mainImage(col , gl_FragCoord.xy);     //改函数是 shadertoy 固定接口，它会输出一个颜色。
+            color = col ;
+        }`;
+
+    let vs = gl.createShader(gl.VERTEX_SHADER);
+    let fs = gl.createShader(gl.FRAGMENT_SHADER);
+    //上传着色器的代码文本
+    gl.shaderSource(vs, baseVS);
+    gl.shaderSource(fs, baseFS);
+    //编译着色器
+    gl.compileShader(vs);
+    gl.compileShader(fs);
+    //创建 gl程序
+    let program = gl.createProgram();
+    //将 着色器 绑定到 gl程序 ，并链接， 着色器到GPU准备工作的最后一步
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    //指定当前 使用的gl程序
+    gl.useProgram(program);
+
+    let posArr = [0, 3, 2, -1, -2, -1];  //三个顶点坐标，两个为一组二维顶点。
+    //创建 缓冲区对象
+    let glPosBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, glPosBuffer);  //指定当前被操作的 缓冲区对象
+    //给当前缓冲区对象（GPU显存），上传顶点位置数据
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(posArr), gl.STATIC_DRAW);
+
+    //为着色器 Attrib 字段分配 ，指定上面的顶点位置缓冲区作为输入数据
+    //先获取 Attrib 的 名为 "a_Position" 字段的地址
+    let aPositionAddr = gl.getAttribLocation(program, "a_Position");
+    gl.bindBuffer(gl.ARRAY_BUFFER, glPosBuffer);//指定当前被操作的 缓冲区对象
+    //告诉GPU，"a_Position" 字段，如何从缓冲区中读取数据
+    gl.vertexAttribPointer(aPositionAddr, 2, gl.FLOAT, false, 0, 0);
+    //激活启用 设置Attrib 字段的设置。
+    gl.enableVertexAttribArray(aPositionAddr);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+
+    let totalTimeSec = 0;
+
+    //shaderToy 内置uniform 上传
+    //获取 uniform  字段名为  "iResolution  " 的地址
+    let iResolutionAddr = gl.getUniformLocation(program, "iResolution");
+    //给iResolutionAddr 字段设置数据 ，是canvas的像素宽高
+    gl.uniform3f(iResolutionAddr, gl.canvas.width, gl.canvas.height, 1);
+    //获取 uniform  字段名为  "iTime" 的地址 
+    let iTimeAddr = gl.getUniformLocation(program, "iTime");
+    //给iTimeAddr字段设置数据，是开始运行到当前的计时
+    gl.uniform1f(iTimeAddr, totalTimeSec);
+
+  </script>
+</body>
+
 </html>

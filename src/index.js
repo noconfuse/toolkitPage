@@ -14,26 +14,24 @@ import Landing from './views/Landing'
 import './index.css';
 // import App from './App';
 import reportWebVitals from './reportWebVitals';
+import Layout from './components/Layout';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
+
+
+
+
+
+
+
 root.render(
   // <React.StrictMode>
     <BrowserRouter path="/">
-      <Routes>
-        <Route path='/' element={<Landing/>} />
-        {/* <Route path='user' element={<User></User>}>
-          <Route path='login' element={Login} />
-          <Route path='register' element={Register} />
-        </Route> */}
-        {/* <Route path="home" element={Layout}> */}
-          {/* <IndexRoute component={Task}/> */}
-          {/* <Route path="notes" component={Notes} />
-          <Route path="task" component={Task} />
-          <Route path="category" component={Category} />
-          <Route path="address" component={Address} />
-          <Route path="tags" component={Tags} /> */}
-        {/* </Route> */}
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route path='/' element={<Landing />} />
+        </Routes>
+      </Layout>
     </BrowserRouter>
   // </React.StrictMode>
 );

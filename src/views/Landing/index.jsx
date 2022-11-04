@@ -1,6 +1,6 @@
-import { Box } from '@mui/system';
 import React from 'react';
 import Calendar from '../../components/Calendar'
+import HotRank from '../../components/HotRank';
 import SearchInput from '../../components/SearchInput';
 import ToolBar from '../../components/ToolBar'
 import Translate from '../../components/Translate';
@@ -16,11 +16,12 @@ export default class Landing extends React.Component{
                 {/* <RaisedButton label="注册" style={style.registerBtn} href="user/register"/> */}
                 {/* <Calendar/> */}
                 {/* <ToolBar></ToolBar> */}
-                <div className="fixed right-6 top-6">
+                <div className="fixed left-6 top-6">
                     <Translate></Translate>
-
                 </div>
-                <SearchInput></SearchInput>
+                
+                <HotRank></HotRank>
+                {/* <SearchInput></SearchInput> */}
             </div>
         );
     }

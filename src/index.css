@@ -31,9 +31,29 @@ a {
   text-decoration: none;
   color: #2cadf8;
 }
-.align-right {
-  text-align: right;
+/* ====滚动条样式 */
+
+
+*::-webkit-scrollbar{
+  width: 2px;
+  background-color: transparent;
 }
+
+
+*:hover::-webkit-scrollbar-track-piece{
+  background-color: transparent;
+  border-radius: 6px;
+}
+
+*:hover::-webkit-scrollbar-thumb:vertical{
+  background-color: #c0cedc;
+  border-radius: 6px;
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+  border: 2px solid #fff;
+}
+
+
 
 .hv_center {
   display: flex;
@@ -97,9 +117,7 @@ a {
   position: absolute;
   height: 100%;
 }
-.app-content {
-  margin-left:80px;
-}
+
 .calendarDetail {
   width:260px;
   border-left:#2cadf8 solid 2px;
