@@ -24,6 +24,8 @@
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
   <title>鹿街</title>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-FRCKX6HCVE"></script>
+
 </head>
 
 <body>
@@ -126,6 +128,14 @@
     //给iTimeAddr字段设置数据，是开始运行到当前的计时
     gl.uniform1f(iTimeAddr, totalTimeSec);
 
+  </script>
+  <!-- Google tag (gtag.js) -->
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+
+    gtag('config', 'G-FRCKX6HCVE');
   </script>
 </body>
 

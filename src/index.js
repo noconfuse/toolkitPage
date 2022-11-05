@@ -15,6 +15,7 @@ import './index.css';
 // import App from './App';
 import reportWebVitals from './reportWebVitals';
 import Layout from './components/Layout';
+import Scrapy from './views/Scrapy';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
@@ -30,6 +31,7 @@ root.render(
       <Layout>
         <Routes>
           <Route path='/' element={<Landing />} />
+          <Route path='/scrapy' element={<Scrapy />} />
         </Routes>
       </Layout>
     </BrowserRouter>

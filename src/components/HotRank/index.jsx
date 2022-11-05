@@ -30,6 +30,11 @@ const hotRankConfig = [
     rankName: "b站热搜",
     dataKey: "bilibiliHotRank",
   },
+  {
+    type: 6,
+    rankName: "IT资讯",
+    dataKey: "ITHotRank",
+  }
 ];
 
 export default function HotRank() {
