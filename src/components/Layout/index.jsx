@@ -13,7 +13,7 @@ export default function Layout(props) {
     }, [setOpen, open])
     return (
         <div className="relative appContent">
-            <Box sx={{ position: "absolute", width: "100%", height: "600px" }}>
+            <Box sx={{ position: "absolute", width: "100%", height: "100vh" }}>
                 <StarField />
             </Box>
             <SideBar routes={routesConfig} menuOpen={open} />
