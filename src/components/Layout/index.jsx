@@ -1,16 +1,28 @@
-import React, {Component} from 'react';
-import Header from '../Header';
+import { Box } from '@mui/system';
+import React, { Component, useCallback, useState } from 'react';
+import StarField from '../StarField';
+import Header from './Header';
 import './index.scss';
+import SideBar from './SideBar';
 
-export default class Layout extends Component {
-    render() {
-        return (
-            <div className="appContent">
-                <Header></Header>
-                <div className="mx-auto main xl:max-w-7xl sm:max-w-sm md:max-w-md">
-                    {this.props.children}
+export default function Layout(props) {
+    const { routesConfig } = props;
+    const [open, setOpen] = useState(true);
+    const switchOpen = useCallback(() => {
+        setOpen(!open)
+    }, [setOpen, open])
+    return (
+        <div className="relative appContent">
+            <Box sx={{ position: "absolute", width: "100%", height: "600px" }}>
+                <StarField />
+            </Box>
+            <SideBar routes={routesConfig} menuOpen={open} />
+            <div className="relative z-10 overflow-x-hidden">
+                <Header switch={switchOpen} menuOpen={open}></Header>
+                <div className="mx-auto main">
+                    {props.children}
                 </div>
             </div>
-        )
-    }
+        </div>
+    )
 }

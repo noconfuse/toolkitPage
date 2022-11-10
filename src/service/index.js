@@ -40,3 +40,20 @@ export const getHotRank = (queryType)=>{
         }
     })
 }
+
+// 天气api
+export const getWeather = async (options)=>{
+    const {page,pageSize ,city} = options;
+    const {data} = await axiosIns({
+        method:"GET",
+        url:`weather`,
+        params:{
+            city,
+            needMoreData:true,
+            pageNo:page,
+            pageSize
+        }
+    })
+
+    return data
+}

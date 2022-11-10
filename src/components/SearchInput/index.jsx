@@ -118,9 +118,9 @@ export default function SearchInput() {
 
 
     return (
-        <div className="relative w-2/6 max-w-3xl mx-auto searchContainer">
+        <div className="relative w-1/2 max-w-3xl mx-auto searchContainer">
             <div className="flex justify-between pl-3 bg-white rounded-full">
-                <InputBase startAdornment={<Search></Search>} name="searchInput" placeholder="搜一搜" className="flex-grow py-2 font-bold" onKeyUp={handleKeyUp} value={searchStr} onChange={(event) => {
+                <InputBase sx={{color:"ButtonText"}} startAdornment={<Search></Search>} name="searchInput" placeholder="搜一搜" className="flex-grow py-3 font-bold" onKeyUp={handleKeyUp} value={searchStr} onChange={(event) => {
                     setSearchStr(event.target.value);
                     getSuggestion(event.target.value)
                 }} onBlur={handleSearchInputBlur} onFocus={handleSearchInputFocus}></InputBase>
@@ -140,7 +140,7 @@ export default function SearchInput() {
                 {
                     searchOptions.map(item => {
                         return (<li key={item.name}>
-                            <Chip label={item.name} variant={searchTypeKey===item.key?"filled":"outlined"} clickable color="info" onClick={handleChipItemClick.bind(this,item)}>
+                            <Chip label={item.name} variant={searchTypeKey===item.key?"filled":"outlined"} clickable onClick={handleChipItemClick.bind(this,item)}>
 
                             </Chip>
 

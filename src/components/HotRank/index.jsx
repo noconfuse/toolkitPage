@@ -3,6 +3,7 @@ import Grid2 from "@mui/material/Unstable_Grid2/Grid2";
 import classNames from "classnames";
 import { getHotRank } from "../../service";
 import { formateHotTime, formateTrendNum } from "../../utils";
+import { Box } from "@mui/system";
 
 const hotRankConfig = [
   {
@@ -46,11 +47,10 @@ export default function HotRank() {
     });
   }, []);
   return (
-      
     <Grid2 container rowSpacing={2} columnSpacing={{ xs: 1, sm: 2, md: 3 }}>
       {hotRankConfig.map((rank) => (
         <Grid2 xs={4} key={rank.rankName}>
-          <div className="w-full p-2 bg-white rounded bg-opacity-60">
+          <div className="w-full p-2 bg-white rounded">
             <div className="flex items-center justify-between pb-2 border-b border-solid cardTitle border-slate-300">
                 <img src={hotRanks[rank.dataKey]?.logo} alt="" className="w-6 h-6 mr-2" />
                 <span className="flex-1">

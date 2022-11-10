@@ -7,7 +7,6 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 // import Category from './components/Category';
 // import Address from './components/Address';
 // import Tags from './components/Tags'
-import Landing from './views/Landing'
 // import User from './components/User'
 // import Login from './components/Login'
 // import Register from './components/Register'
@@ -15,27 +14,33 @@ import './index.css';
 // import App from './App';
 import reportWebVitals from './reportWebVitals';
 import Layout from './components/Layout';
-import Scrapy from './views/Scrapy';
+import RoutesConfig from './router/config'
+import { createTheme, ThemeProvider } from '@mui/material/styles';
+
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
 
-
-
-
-
+const theme = createTheme({
+  palette: {
+   mode:"dark"
+  },
+})
 
 root.render(
-  // <React.StrictMode>
+  <React.StrictMode>
     <BrowserRouter path="/">
-      <Layout>
+      <ThemeProvider theme={theme}>
+      <Layout routesConfig={RoutesConfig}>
         <Routes>
-          <Route path='/' element={<Landing />} />
-          <Route path='/scrapy' element={<Scrapy />} />
+          {
+            RoutesConfig.map(config=>(<Route key={config.name} path={config.path} element={<config.component />} />))
+          }
         </Routes>
       </Layout>
+      </ThemeProvider>
     </BrowserRouter>
-  // </React.StrictMode>
+   </React.StrictMode>
 );
 
 // If you want to start measuring performance in your app, pass a function
