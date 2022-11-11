@@ -4,6 +4,8 @@ import classNames from "classnames";
 import { getHotRank } from "../../service";
 import { formateHotTime, formateTrendNum } from "../../utils";
 import { Box } from "@mui/system";
+import { Circle } from "@mui/icons-material";
+import { CircularProgress } from "@mui/material";
 
 const hotRankConfig = [
   {
@@ -49,31 +51,35 @@ export default function HotRank() {
   return (
     <Grid2 container rowSpacing={2} columnSpacing={{ xs: 1, sm: 2, md: 3 }}>
       {hotRankConfig.map((rank) => (
-        <Grid2 xs={4} key={rank.rankName}>
+        <Grid2 xs={3} key={rank.rankName}>
           <div className="w-full p-2 bg-white rounded">
             <div className="flex items-center justify-between pb-2 border-b border-solid cardTitle border-slate-300">
-                <img src={hotRanks[rank.dataKey]?.logo} alt="" className="w-6 h-6 mr-2" />
-                <span className="flex-1">
+              <img src={hotRanks[rank.dataKey]?.logo} alt="" className="w-6 h-6 mr-2" />
+              <span className="flex-1">
                 {rank.rankName}
-                </span>
-                <span className="ml-2 text-xs text-gray-500">
-                    更新于{formateHotTime(hotRanks[rank.dataKey]?.updateTime)}
-                </span>
-                </div>
-            <ul className="pt-2 overflow-y-auto max-h-96">
-              {hotRanks[rank.dataKey]?.items.map((item,index) => {
-                return (
-                  <li key={item.itemTitle} className="pb-1 text-black">
-                    <a href={item.itemLink} target="_blank" className="flex justify-between text-black visited:text-gray-300 hover:text-blue-500">
-                    <span className={classNames(index<=2?'text-red-400':'',"w-6","inline-block")}>{index+1}.</span>
-                      <span className="flex-1">{item.itemTitle}</span>
-                      <span className="items-end content-end text-gray-500">{formateTrendNum(item.trendNum)}</span>
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
+              </span>
+              <span className="ml-2 text-xs text-gray-500">
+                更新于{formateHotTime(hotRanks[rank.dataKey]?.updateTime)}
+              </span>
+            </div>
+            {
+              hotRanks[rank.dataKey] ? <ul className="pt-2 overflow-y-auto h-96">
+                {hotRanks[rank.dataKey].items.map((item, index) => {
+                  return (
+                    <li key={item.itemTitle} className="pb-1 text-black">
+                      <a href={item.itemLink} target="_blank" className="flex justify-between text-black visited:text-gray-300 hover:text-blue-500">
+                        <span className={classNames(index <= 2 ? 'text-red-400' : '', "w-6", "inline-block")}>{index + 1}.</span>
+                        <span className="flex-1">{item.itemTitle}</span>
+                        <span className="items-end content-end text-gray-500">{formateTrendNum(item.trendNum)}</span>
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul> : <div className="flex items-center justify-center h-96"><CircularProgress color="secondary"></CircularProgress></div>
+            }
+
           </div>
+
         </Grid2>
       ))}
     </Grid2>
