@@ -21,7 +21,7 @@ body {
 }
 
 #root {
-  background: black ;
+  background: #3E1D4C ;
   background-size: 100% auto;
   min-height: 100%;
 }
@@ -37,7 +37,7 @@ a {
 
 
 *::-webkit-scrollbar{
-  width: 2px;
+  width: 0px;
   background-color: transparent;
 }
 

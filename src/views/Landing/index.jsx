@@ -2,6 +2,7 @@ import { Box } from '@mui/system';
 import React from 'react';
 import HotRank from '../../components/HotRank';
 import SearchInput from '../../components/SearchInput';
+import StarField from '../../components/StarField';
 
 import './index.scss';
 
@@ -15,15 +16,16 @@ export default class Landing extends React.Component{
                 {/* <RaisedButton label="注册" style={style.registerBtn} href="user/register"/> */}
                 {/* <Calendar/> */}
                 {/* <ToolBar></ToolBar> */}
+                
                 <div className="relative flex items-center h-96">
                     <SearchInput/>
                 </div>
                 <div className="fixed left-6 top-6">
                     {/* <Translate></Translate> */}
                 </div>
-                <Box padding="20px">
+                {/* <Box padding="20px">
                     <HotRank></HotRank>
-                </Box>
+                </Box> */}
                 
                 {/* <SearchInput></SearchInput> */}
             </div>

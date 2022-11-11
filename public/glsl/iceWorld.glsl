@@ -26,8 +26,8 @@ const vec3 signColorB = vec3(3.0, 3.0, 3.0);
 #else
 const vec3 cameraDir = normalize(vec3(-2.0, -1.0, -2.0));
 const float cameraDist = 9.0;
-const float speed = 1.0;
-const float zoom = 3.5;
+const float speed = .2;
+const float zoom = 1.5;
 
 const vec3 windowColorA = vec3(0.0, 0.0, 1.5);
 const vec3 windowColorB = vec3(0.5, 1.5, 2.0);

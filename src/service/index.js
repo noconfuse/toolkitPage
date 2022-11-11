@@ -3,7 +3,7 @@ import TranslateEngine from "./baiduTranslate";
 import { jsonp } from "./request";
 
 
-
+//TODO 改造
 export const fetchSuggestions = (searchStr)=>{
     const now = Date.now().valueOf();
     return new Promise(resolve=>{

@@ -41,7 +41,7 @@ export default function SideBar(props) {
     };
 
     return (
-        <Box sx={{ width: `${menuOpen ? '240px' : '86px'}`, bgcolor: 'background.paper', minHeight: "100vh", transition: "width .3s linear", position: 'relative', zIndex: "10", overflow: "hidden" }}>
+        <Box sx={{ width: `${menuOpen ? '240px' : '0'}`, bgcolor: 'background.paper', minHeight: "100vh", transition: "width .3s linear", position: 'relative', zIndex: "10", overflow: "hidden" }}>
             <Box sx={{ color: "text.primary", fontWeight: "fontWeightBold", fontSize: "26px", textAlign: "center" }} onClick={()=>{
                 window.location.href = '/'
             }}>

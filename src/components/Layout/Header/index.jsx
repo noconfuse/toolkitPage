@@ -9,14 +9,14 @@ import Weather from "../../Weather";
 export default function Header(props) {
     const {menuOpen} = props;
     return (
-        <Grid container spacing={2} sx={{ height: "88px", alignItems: "center",position:'relative' }} >
+        <Grid container spacing={2}  className="fixed top-0 z-10 items-center w-full h-24">
             <Grid item xs={8}>
-                <IconButton size="large" onClick={()=>{
+                {/* <IconButton size="large" onClick={()=>{
                     props.switch()
                 }}>
                     {menuOpen?<MenuOpenIcon></MenuOpenIcon>:<MenuIcon/>}
                     
-                </IconButton>
+                </IconButton> */}
             </Grid>
             <Grid item xs={4} sx={{ justifyContent: "flex-end", display: "flex", pr: "20px",color:"text.primary" }}>
                <Weather/>
