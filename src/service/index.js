@@ -57,3 +57,13 @@ export const getWeather = async (options)=>{
 
     return data
 }
+
+
+//通过ip获取地址
+export const getLocation = async ()=>{
+    const {data} = await axiosIns({
+        method:"GET",
+        url:"location"
+    });
+    return data
+}

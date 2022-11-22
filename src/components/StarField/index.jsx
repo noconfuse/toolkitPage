@@ -11,7 +11,7 @@ export default function StarField(){
         const gl = cavans.getContext('webgl2');
         const stnPlayer = new STNPlayer(gl)
         
-        axios.get(`${process.env.PUBLIC_URL}/glsl/iceWorld.glsl`).then(res=>{
+        axios.get(`${process.env.PUBLIC_URL}/glsl/city.glsl`).then(res=>{
             const glsl = res.data
             stnPlayer.run(glsl)
         })

@@ -107,13 +107,15 @@ export class STNPlayer {
         //pos 
         let aPositionAddr = gl.getAttribLocation(program, "a_Position");    //先获取 Attrib 的 名为 "a_Position" 字段的地址
         gl.bindBuffer(gl.ARRAY_BUFFER, fullMesh.glPosBuffer);   //指定当前被操作的 缓冲区对象
-        //告诉显卡从当前绑定的缓冲区（bindBuffer()指定的缓冲区）中读取顶点数据 (怎么去读取数据)
-        gl.vertexAttribPointer(aPositionAddr, 2, gl.FLOAT, false, 0, 0);  //告诉GPU，"a_Position" 字段，如何从缓冲区中读取数据
         //激活启用
         gl.enableVertexAttribArray(aPositionAddr);
+        //告诉显卡从当前绑定的缓冲区（bindBuffer()指定的缓冲区）中读取顶点数据 (怎么去读取数据)
+        gl.vertexAttribPointer(aPositionAddr, 2, gl.FLOAT, false, 0, 0);  //告诉GPU，"a_Position" 字段，如何从缓冲区中读取数据
 
         //绘制函数
         let baseDraw = () => {
+            gl.clearColor(0.0,0.0,0.0,1.0)
+            gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT)
             //绘制请求
             gl.drawArrays(gl.TRIANGLES, 0, 3);
         }
@@ -140,7 +142,6 @@ export class STNPlayer {
             gl.uniform4f(iMouseAddr, this.mMousePosX, this.mMousePosY, this.mMouseOriX, this.mMouseOriY);
             let iFrameAddr = gl.getUniformLocation(program, "iFrame");
             gl.uniform1i(iFrameAddr, frame);
-
             //绘制
             baseDraw();
             //循环刷新

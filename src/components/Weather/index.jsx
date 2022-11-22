@@ -1,29 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Stack } from '@mui/system';
-import classNames from 'classnames';
-import { getWeather } from "../../service";
+import { getLocation, getWeather } from "../../service";
 import { Chip } from '@mui/material';
 
 
-export default function Weather(){
-    const [weatherList,setWeatherList] = useState([{}]);
+export default function Weather() {
+    const [weatherList, setWeatherList] = useState([{}]);
     useEffect(() => {
-        getWeather({
-            page: 1,
-            pageSize: 7,
-            city:window.returnCitySN.cname
-        }).then(res => {
-            console.log(res);
-            setWeatherList(res.data.list)
+        getLocation().then(res => {
+            const { city } = res
+            getWeather({
+                page: 1,
+                pageSize: 7,
+                city
+            }).then(res => {
+                setWeatherList(res.data.list)
+            })
         })
+
     }, [setWeatherList])
 
-    return ( <Stack direction="row" spacing={1} className="select-none" alignItems="center" mr="20px">
 
-        <span>{window.returnCitySN.cname}</span>
-        <span>{weatherList[0].weather}</span>
-        <span>{weatherList[0].temp}°C</span>
-        <Chip label={weatherList[0].airQuality} variant="filled" size="small" color={["优","良"].includes(weatherList[0].airQuality)?'success':'warning'}>
+    const todayWeather = useMemo(()=>{
+        return weatherList[0]||{}
+    },[weatherList])
+
+
+
+    return (<Stack direction="row" spacing={1} className="select-none" alignItems="center" mr="20px">
+
+        <span>{todayWeather.city}</span>
+        <span>{todayWeather.weather}</span>
+        <span>{todayWeather.temp}°C</span>
+        <Chip label={todayWeather.airQuality} variant="filled" size="small" color={["优","良"].includes(todayWeather.airQuality)?'success':'warning'}>
 
         </Chip>
     </Stack>)

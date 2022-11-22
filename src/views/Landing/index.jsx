@@ -1,8 +1,5 @@
-import { Box } from '@mui/system';
 import React from 'react';
-import HotRank from '../../components/HotRank';
 import SearchInput from '../../components/SearchInput';
-import StarField from '../../components/StarField';
 
 import './index.scss';
 

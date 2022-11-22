@@ -3,6 +3,7 @@ import Landing from '../views/Landing'
 import NotFound from '../views/NotFound'
 import PersonIcon from '@mui/icons-material/Person';
 import ConstructionIcon from "@mui/icons-material/Construction";
+import About from '../views/About';
 
 
 const routesConfig = [
@@ -13,6 +14,14 @@ const routesConfig = [
         meta:{
             title:"首页",
             hide:true
+        }
+    },
+    {
+        name:"关于本站",
+        path:"/about",
+        component:About,
+        meta:{
+            title:"关于本站"
         }
     },
     {
