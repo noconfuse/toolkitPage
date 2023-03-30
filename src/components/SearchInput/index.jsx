@@ -245,18 +245,21 @@ export default function SearchInput() {
     }, [subSearchOptions]);
 
     return (
-        <div className="relative flex flex-col items-center w-1/2 max-w-3xl mx-auto searchContainer">
+        <div className="relative flex flex-col items-center w-full max-w-3xl mx-auto sm:w-1/2">
             <Tabs
                 value={searchTypeName}
                 onChange={handleChangeSearchType}
                 textColor="secondary"
                 indicatorColor="secondary"
+                variant="scrollable"
+                allowScrollButtonsMobile
+                className="w-full"
             >
                 {searchOptions.map((item) => (
                     <Tab value={item.name} key={item.name} label={item.name} sx={{fontSize:"20px"}} />
                 ))}
             </Tabs>
-            <div className="flex w-full pl-3 mt-3 bg-white rounded-full">
+            <div className="flex w-full pl-3 mt-3 bg-white rounded-full bg-opacity-70">
                 <InputBase
                     sx={{ color: "ButtonText" }}
                     startAdornment={<Search></Search>}
@@ -274,7 +277,7 @@ export default function SearchInput() {
                 ></InputBase>
             </div>
 
-            <ul className="flex justify-start gap-3 mt-3 ">
+            <ul className="flex w-full gap-3 mt-3 overflow-x-auto sm:justify-center">
                 {subSearchOptions.map((item) => {
                     return (
                         <li key={item.name}>

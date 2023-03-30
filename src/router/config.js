@@ -1,5 +1,6 @@
 
 import Landing from '../views/Landing'
+import Tools from '../views/Tools'
 import NotFound from '../views/NotFound'
 import PersonIcon from '@mui/icons-material/Person';
 import ConstructionIcon from "@mui/icons-material/Construction";
@@ -26,8 +27,8 @@ const routesConfig = [
     },
     {
         name:"实用工具",
-        path:"/utils",
-        component:NotFound,
+        path:"/tools",
+        component:Tools,
         meta:{
             title:"实用工具",
             icon:ConstructionIcon,

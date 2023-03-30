@@ -11,9 +11,11 @@ import logo from '../../../assets/images/logo.jpeg'
 export default function Header(props) {
     const navigate = useNavigate()
     // const {menuOpen} = props;
-    const goIntroduction = useCallback(()=>{
-        navigate('/about')
+    const jump = useCallback((url)=>{
+        navigate(url)
     },[])
+
+
 
     const [value, setValue] = React.useState(0);
 
@@ -38,8 +40,10 @@ export default function Header(props) {
                 </IconButton> */}
             </Grid>
             <Grid item xs={4} sx={{ justifyContent: "flex-end", display: "flex", pr: "20px",color:"text.primary",gap:"10px" }}>
-                <Link component="button" variant="body1" onClick={goIntroduction}>关于本站</Link>
-                <Weather/>
+                <Link component="button" variant="body1" onClick={jump.bind(this,'/')}>首页</Link>
+                {/* <Link component="button" variant="body1" onClick={jump.bind(this,'/tools')}>实用工具</Link> */}
+                <Link component="button" variant="body1" onClick={jump.bind(this,'/about')}>关于本站</Link>
+                {/* <Weather/> */}
                 <Avatar sx={{ bgcolor: deepOrange[500] }}>
                     <Person2Icon></Person2Icon>
                 </Avatar>
