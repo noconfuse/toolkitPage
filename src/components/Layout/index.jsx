@@ -7,7 +7,7 @@ import './index.scss';
 import KeyboardDoubleArrowRightIcon from '@mui/icons-material/KeyboardDoubleArrowRight';
 import KeyboardDoubleArrowLeftIcon from '@mui/icons-material/KeyboardDoubleArrowLeft';
 import SideBar from './SideBar';
-import { IconButton, Paper, Tooltip } from '@mui/material';
+import { IconButton, Paper, Tooltip ,Link} from '@mui/material';
 import classNames from 'classnames';
 import { deepOrange } from '@mui/material/colors';
 import zIndex from '@mui/material/styles/zIndex';
@@ -40,7 +40,11 @@ export default function Layout(props) {
                     </IconButton>
                 </Tooltip>
             </Paper>
-            {/* </div> */}
+            <div className='fixed w-full text-sm text-center footer bottom-10'>
+                    <p className='text-gray-400'>© 2023 上海昭鹿文化科技有限公司</p>
+                    {/* <a href="https://beian.miit.gov.cn/" target="_blank">沪ICP备2023010366号-1</a> */}
+                    <Link href="https://beian.miit.gov.cn/" target='_blank'>沪ICP备2023010366号</Link>
+                </div>
         </div>
     )
 }

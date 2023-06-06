@@ -25,6 +25,7 @@ export default class Landing extends React.Component{
                 </Box> */}
                 
                 {/* <SearchInput></SearchInput> */}
+                
             </div>
         );
     }
