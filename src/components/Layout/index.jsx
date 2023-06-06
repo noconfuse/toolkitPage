@@ -43,7 +43,7 @@ export default function Layout(props) {
             <div className='fixed w-full text-sm text-center footer bottom-10'>
                     <p className='text-gray-400'>© 2023 上海昭鹿文化科技有限公司</p>
                     {/* <a href="https://beian.miit.gov.cn/" target="_blank">沪ICP备2023010366号-1</a> */}
-                    <Link href="https://beian.miit.gov.cn/" target='_blank'>沪ICP备2023010366号</Link>
+                    <Link href="https://beian.miit.gov.cn/" target='_blank'>沪ICP备2023010366号-1</Link>
                 </div>
         </div>
     )
