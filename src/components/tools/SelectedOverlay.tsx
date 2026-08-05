@@ -18,10 +18,16 @@ export function SelectedOverlay({
   layer,
   bounds,
   onDelete,
+  onCornerDown,
+  onRotateDown,
 }: {
   layer: { cx: number; cy: number; w: number; h: number; rotation: number };
   bounds: { w: number; h: number };
   onDelete: () => void;
+  /** 角点按下（开始缩放拖拽），坐标是屏幕 clientX/Y，由父级换算成画布坐标 */
+  onCornerDown: (clientX: number, clientY: number) => void;
+  /** 旋转柄按下（开始旋转拖拽） */
+  onRotateDown: (clientX: number, clientY: number) => void;
 }) {
   const cs = cornersOf(layer.cx, layer.cy, layer.w, layer.h, layer.rotation);
   const bb = aabb(layer.cx, layer.cy, layer.w, layer.h, layer.rotation);
@@ -110,7 +116,10 @@ export function SelectedOverlay({
             key={k}
             data-corner={k}
             data-overlay-control
-            onMouseDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              onCornerDown(e.clientX, e.clientY);
+            }}
             sx={{
               position: 'absolute',
               left: toPct(c.x),
@@ -134,7 +143,10 @@ export function SelectedOverlay({
       <Box
         data-rotate
         data-overlay-control
-        onMouseDown={(e) => e.stopPropagation()}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          onRotateDown(e.clientX, e.clientY);
+        }}
         sx={{
           position: 'absolute',
           left: toPct(rotHandleX),

@@ -214,87 +214,96 @@ export default function ImageCombine() {
   const selectedLayer = layers.find((l) => l.id === selectedId) ?? null;
 
   // ───────── 鼠标按下 ─────────
-  const onSurfaceMouseDown = (e: React.MouseEvent) => {
-    // 如果点在覆盖层控件上（删除按钮 / 角点 / 旋转柄），让它们自己处理
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('[data-overlay-control]')) {
-      return;
-    }
-    const p = screenToCanvas(e.clientX, e.clientY);
-    if (!p) return;
+  // 从屏幕坐标尝试对「选中层」启动拖拽（角点缩放 → 旋转 → 移动），命中返回 true。
+  // 覆盖层的角点 / 旋转柄 onMouseDown 复用同一逻辑：手柄就停在命中点正上方，
+  // 点角点必命中 pickCorner，点旋转柄必命中旋转检测。
+  const tryStartDrag = (clientX: number, clientY: number): boolean => {
+    const p = screenToCanvas(clientX, clientY);
+    if (!p || !selectedLayer) return false;
 
-    // 1) 如果有选中层，先检查是否点在角点 / 旋转柄 / 内部
-    if (selectedLayer) {
-      // 角点
-      const corner = pickCorner(
+    // 角点缩放
+    const corner = pickCorner(
+      p,
+      selectedLayer.cx,
+      selectedLayer.cy,
+      selectedLayer.w,
+      selectedLayer.h,
+      selectedLayer.rotation,
+      HIT_SIZE / scale,
+    );
+    if (corner) {
+      setDragState({
+        kind: 'resize',
+        layerId: selectedLayer.id,
+        startCx: selectedLayer.cx,
+        startCy: selectedLayer.cy,
+        startW: selectedLayer.w,
+        startH: selectedLayer.h,
+        startRotation: selectedLayer.rotation,
+      });
+      return true;
+    }
+
+    // 旋转手柄（旋转后的顶部中点，沿法线外移 24px）
+    const rotSin = Math.sin(selectedLayer.rotation);
+    const rotCos = Math.cos(selectedLayer.rotation);
+    const handleX =
+      selectedLayer.cx + (selectedLayer.h / 2) * rotSin - rotSin * 24;
+    const handleY =
+      selectedLayer.cy - (selectedLayer.h / 2) * rotCos + rotCos * 24;
+    if (
+      Math.abs(p.x - handleX) < 8 / scale &&
+      Math.abs(p.y - handleY) < 8 / scale
+    ) {
+      const startAngle = Math.atan2(
+        p.y - selectedLayer.cy,
+        p.x - selectedLayer.cx,
+      );
+      setDragState({
+        kind: 'rotate',
+        layerId: selectedLayer.id,
+        startAngle,
+        startRotation: selectedLayer.rotation,
+        center: { x: selectedLayer.cx, y: selectedLayer.cy },
+      });
+      return true;
+    }
+
+    // 内部 → 移动
+    if (
+      hitInside(
         p,
         selectedLayer.cx,
         selectedLayer.cy,
         selectedLayer.w,
         selectedLayer.h,
         selectedLayer.rotation,
-        HIT_SIZE / scale,
-      );
-      if (corner) {
-        setDragState({
-          kind: 'resize',
-          layerId: selectedLayer.id,
-          startCx: selectedLayer.cx,
-          startCy: selectedLayer.cy,
-          startW: selectedLayer.w,
-          startH: selectedLayer.h,
-          startRotation: selectedLayer.rotation,
-        });
-        return;
-      }
+      )
+    ) {
+      setDragState({
+        kind: 'move',
+        layerId: selectedLayer.id,
+        offsetX: p.x - selectedLayer.cx,
+        offsetY: p.y - selectedLayer.cy,
+      });
+      return true;
+    }
+    return false;
+  };
 
-      // 旋转手柄（旋转后的顶部中点，沿法线外移 24px）
-      const rotSin = Math.sin(selectedLayer.rotation);
-      const rotCos = Math.cos(selectedLayer.rotation);
-      const handleX =
-        selectedLayer.cx + (selectedLayer.h / 2) * rotSin - rotSin * 24;
-      const handleY =
-        selectedLayer.cy - (selectedLayer.h / 2) * rotCos + rotCos * 24;
-      if (
-        Math.abs(p.x - handleX) < 8 / scale &&
-        Math.abs(p.y - handleY) < 8 / scale
-      ) {
-        const startAngle = Math.atan2(
-          p.y - selectedLayer.cy,
-          p.x - selectedLayer.cx,
-        );
-        setDragState({
-          kind: 'rotate',
-          layerId: selectedLayer.id,
-          startAngle,
-          startRotation: selectedLayer.rotation,
-          center: { x: selectedLayer.cx, y: selectedLayer.cy },
-        });
-        return;
-      }
-
-      // 内部 → 移动
-      if (
-        hitInside(
-          p,
-          selectedLayer.cx,
-          selectedLayer.cy,
-          selectedLayer.w,
-          selectedLayer.h,
-          selectedLayer.rotation,
-        )
-      ) {
-        setDragState({
-          kind: 'move',
-          layerId: selectedLayer.id,
-          offsetX: p.x - selectedLayer.cx,
-          offsetY: p.y - selectedLayer.cy,
-        });
-        return;
-      }
+  const onSurfaceMouseDown = (e: React.MouseEvent) => {
+    // 点在覆盖层控件上（删除按钮 / 角点 / 旋转柄）时，由控件自己处理
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('[data-overlay-control]')) {
+      return;
+    }
+    if (tryStartDrag(e.clientX, e.clientY)) {
+      return;
     }
 
     // 2) 点中其他 layer（按 z-order 从顶到底）→ 选中
+    const p = screenToCanvas(e.clientX, e.clientY);
+    if (!p) return;
     for (let i = layers.length - 1; i >= 0; i--) {
       const l = layers[i];
       if (hitInside(p, l.cx, l.cy, l.w, l.h, l.rotation)) {
@@ -488,6 +497,8 @@ export default function ImageCombine() {
               layer={selectedLayer}
               bounds={{ w: CANVAS_W, h: CANVAS_H }}
               onDelete={() => deleteLayer(selectedLayer.id)}
+              onCornerDown={tryStartDrag}
+              onRotateDown={tryStartDrag}
             />
           )}
 
