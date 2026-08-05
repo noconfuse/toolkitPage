@@ -194,7 +194,7 @@ export default function ImageConvert() {
     const idx = list.findIndex((x) => x.id === id);
     if (idx < 0) return;
     setWorking(true);
-    list[idx].outUrl && URL.revokeObjectURL(list[idx].outUrl);
+    if (list[idx].outUrl) URL.revokeObjectURL(list[idx].outUrl);
     const reset: Item[] = list.map((it, i) =>
       i === idx
         ? { ...it, outUrl: undefined, outBlob: undefined, outSize: undefined, outTarget: target, done: false, failed: false }
