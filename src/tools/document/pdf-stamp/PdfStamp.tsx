@@ -480,7 +480,8 @@ export default function PdfStamp() {
 
       for (const l of layers) {
         const bytes = await fetch(l.url).then((r) => r.arrayBuffer());
-        const isPng = l.name.toLowerCase().endsWith('.png');
+        // url 可能是 data:image/png 或 blob:xxx；name 扩展名可能不可靠（如手写签名无扩展名）
+        const isPng = l.url.startsWith('data:image/png') || l.name.toLowerCase().endsWith('.png');
         const embedded = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
         // 页面像素 → PDF pt（÷ PAGE_RENDER_SCALE），PDF 坐标系为左下原点
         const x = (l.cx - l.w / 2) / PAGE_RENDER_SCALE;
