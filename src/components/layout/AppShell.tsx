@@ -8,14 +8,10 @@ import Container from '@mui/material/Container';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
-import IconButton from '@mui/material/IconButton';
 import Popover from '@mui/material/Popover';
-import GitHubIcon from '@mui/icons-material/GitHub';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { CATEGORIES, TOOLS } from '@/lib/tools-registry';
 import Footer from './Footer';
-
-const GH_URL = 'https://github.com/yourname/toolkit-page';
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -121,20 +117,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Stack>
 
             <Box sx={{ flex: 1 }} />
-
-            <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-              <IconButton
-                component="a"
-                href={GH_URL}
-                target="_blank"
-                rel="noopener"
-                size="small"
-                aria-label="GitHub 仓库"
-                sx={{ color: 'text.secondary' }}
-              >
-                <GitHubIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Stack>
           </Stack>
         </Container>
 
