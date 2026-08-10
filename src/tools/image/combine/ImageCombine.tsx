@@ -47,14 +47,13 @@ const MODE_PRESETS: ReadonlyArray<{
   label: string;
   desc: string;
 }> = [
-  { v: 'source-over', label: '默认', desc: '直接盖在底图上' },
-  { v: 'source-atop', label: '局部', desc: '只保留与底图重叠的部分' },
-  { v: 'lighter', label: '加亮', desc: '颜色叠加变亮，适合光效' },
-  { v: 'source-in', label: '剪贴', desc: '只显示落在底图内的部分' },
-  { v: 'source-out', label: '反剪', desc: '只显示落在底图外的部分' },
-  { v: 'destination-out', label: '擦除', desc: '擦掉底图被盖住的部分' },
-  { v: 'xor', label: '互斥', desc: '重叠区域挖空透出底图' },
-  { v: 'copy', label: '替换', desc: '替换掉整块底图' },
+  { v: 'source-over', label: '默认', desc: '直接覆盖在底图上（最常用）' },
+  { v: 'source-atop', label: '局部', desc: '图层只在与底图重叠处显示，超出底图的部分被裁剪' },
+  { v: 'lighter', label: '加亮', desc: '叠加区域颜色变亮，适合光效、高光' },
+  { v: 'source-in', label: '剪贴', desc: '只保留图层与底图重叠的部分，底图该区域被图层替代' },
+  { v: 'source-out', label: '反剪', desc: '只保留图层落在底图之外的部分（重叠处被挖掉）' },
+  { v: 'destination-out', label: '擦除', desc: '把底图上被图层盖住的部分擦成透明，图层本身不显示' },
+  { v: 'xor', label: '挖空', desc: '图层与底图重叠处挖空透出背景，不重叠的部分都保留' },
 ];
 
 const HIT_SIZE = 12; // px，旋转后的屏幕坐标
@@ -421,18 +420,64 @@ export default function ImageCombine() {
   };
 
   // ───────── 下载 / 清空 ─────────
+  const downloadDataUrl = (dataUrl: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 画布内容（含底图 + 各图层）的包围盒，用于"去除周围透明像素后导出"
+  const getTrimmedDataUrl = (): string | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const w = canvas.width;
+    const h = canvas.height;
+    const data = ctx.getImageData(0, 0, w, h).data;
+    let minX = w, minY = h, maxX = -1, maxY = -1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        if (data[(row + x) * 4 + 3] > 0) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < 0) return null; // 全透明，无内容
+    const tw = maxX - minX + 1;
+    const th = maxY - minY + 1;
+    const out = document.createElement('canvas');
+    out.width = tw;
+    out.height = th;
+    const octx = out.getContext('2d');
+    if (!octx) return null;
+    octx.drawImage(canvas, minX, minY, tw, th, 0, 0, tw, th);
+    return out.toDataURL('image/png', 1);
+  };
+
   const handleDownload = () => {
     setSelectedId(null);
     requestAnimationFrame(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const dataUrl = canvas.toDataURL('image/png', 1);
-      const link = document.createElement('a');
-      link.href = dataUrl;
-      link.download = `合成图-${Date.now()}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadDataUrl(canvas.toDataURL('image/png', 1), `合成图-${Date.now()}.png`);
+    });
+  };
+
+  // 去除周围透明像素后导出（底图 contain 或图层未铺满时，结果尺寸小于画布）
+  const handleTrimmedDownload = () => {
+    setSelectedId(null);
+    requestAnimationFrame(() => {
+      const dataUrl = getTrimmedDataUrl();
+      if (!dataUrl) return; // 画布全透明
+      downloadDataUrl(dataUrl, `合成图-裁剪-${Date.now()}.png`);
     });
   };
 
@@ -465,8 +510,10 @@ export default function ImageCombine() {
             overflow: 'hidden',
             border: 1,
             borderColor: 'divider',
-            bgcolor: '#fafaf7',
-            backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
+            // 棋盘格 = 透明背景示意（canvas 不填底色，透明区域可见）
+            bgcolor: '#ffffff',
+            backgroundImage:
+              'linear-gradient(45deg, #e6e6e6 25%, transparent 25%), linear-gradient(-45deg, #e6e6e6 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e6e6e6 75%), linear-gradient(-45deg, transparent 75%, #e6e6e6 75%)',
             backgroundSize: '20px 20px',
             backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
             cursor:
@@ -487,7 +534,7 @@ export default function ImageCombine() {
               width: '100%',
               height: '100%',
               display: 'block',
-              backgroundColor: '#fafaf7',
+              // 不设背景色：透明区域直接露出下方棋盘格
             }}
           />
 
@@ -584,6 +631,18 @@ export default function ImageCombine() {
           >
             下载
           </Button>
+
+          <Tooltip title="去除周围透明像素后导出（结果尺寸小于画布）">
+            <Button
+              variant="outlined"
+              color="inherit"
+              size="small"
+              onClick={handleTrimmedDownload}
+              disabled={!baseImg}
+            >
+              裁剪导出
+            </Button>
+          </Tooltip>
 
           <Button
             variant="text"
