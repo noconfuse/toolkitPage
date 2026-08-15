@@ -112,7 +112,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           pb: isToolRoute ? 0 : { xs: 6, md: 10 },
         }}
       >
-        {children}
+        {/* 工具页全宽铺开；内容页（首页/关于）限制最大宽度居中，避免大屏下内容过宽 */}
+        {isToolRoute ? (
+          children
+        ) : (
+          <Box sx={{ maxWidth: 'lg', mx: 'auto' }}>{children}</Box>
+        )}
       </Box>
 
       <Box
