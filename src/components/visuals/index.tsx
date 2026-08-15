@@ -193,6 +193,38 @@ export function ThumbWatermark(props: SvgProps) {
   );
 }
 
+export function ThumbRemoveWatermark(props: SvgProps) {
+  return (
+    <svg {...baseSvgProps} {...strokeProps} {...props}>
+      <rect x="14" y="18" width="72" height="64" rx="3" />
+      {/* 被涂抹消除的水印文字（虚线 = 已去除） */}
+      <path d="M24 40 L42 40 L50 47 L42 54 L24 54 Z" opacity="0.35" />
+      <path d="M24 56 L44 56" opacity="0.35" />
+      <path d="M22 36 L46 60 M46 36 L22 60" opacity="0.8" strokeDasharray="2 2" />
+      <path d="M60 40 L60 58 M60 58 L54 52 M60 58 L66 52" strokeWidth="1.5" opacity="0.8" />
+    </svg>
+  );
+}
+
+export function ThumbBackgroundReplace(props: SvgProps) {
+  return (
+    <svg {...baseSvgProps} {...strokeProps} {...props}>
+      {/* 原图框 */}
+      <rect x="14" y="18" width="72" height="64" rx="3" />
+      {/* 背景轮廓（虚线 = 已被 AI 移除） */}
+      <path d="M24 36 L38 50 L30 60 L48 70" opacity="0.3" strokeDasharray="3 2" />
+      {/* 主体（实线 = 被抠出，浮在画布上） */}
+      <path d="M28 70 L28 56 C28 46 46 46 46 56 L46 70" />
+      <circle cx="37" cy="42" r="3" />
+      {/* 分离指示箭头 */}
+      <path d="M54 34 L68 34 M64 30 L68 34 L64 38" />
+      {/* 浮动图层小块（表示可叠加到任意背景） */}
+      <rect x="56" y="46" width="22" height="16" rx="2" opacity="0.6" />
+      <path d="M60 56 L66 62 L62 62 L68 68 M68 62 L64 62" opacity="0.5" />
+    </svg>
+  );
+}
+
 // ───────── 原则图标 ─────────
 export function IconLocal(props: SvgProps) {
   return (

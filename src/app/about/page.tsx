@@ -214,11 +214,56 @@ export default function AboutPage() {
             </MuiLink>
           ))}
         </Stack>
+      </Box>
 
+      {/* §04 关注公众号 */}
+      <Box sx={{ pt: { xs: 6, md: 8 }, pb: { xs: 4, md: 6 }, borderTop: 1, borderColor: 'divider' }}>
+        <Stack
+          direction="row"
+          spacing={1.5}
+          sx={{ mb: 3, alignItems: 'baseline' }}
+        >
+          <Typography
+            variant="overline"
+            sx={{ color: 'primary.main', fontFamily: 'var(--font-geist-mono)' }}
+          >
+            §04
+          </Typography>
+          <Typography variant="h3" sx={{ fontWeight: 500 }}>
+            关注公众号
+          </Typography>
+        </Stack>
+        <Typography variant="body1" sx={{ maxWidth: 720, color: 'text.secondary', fontSize: 16, lineHeight: 1.75, mb: 4 }}>
+          独立开发者的日常记录：新工具上线、踩坑笔记、产品思考，都在这里第一时间同步。
+        </Typography>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1.5 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/qrcode_for_gh_b6f16bbc0480_344.jpg"
+            alt="公众号二维码"
+            width={180}
+            height={180}
+            style={{ borderRadius: 8, border: '1px solid rgba(15, 31, 29, 0.12)' }}
+          />
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
+            微信扫一扫 · 关注公众号
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box
+        sx={{
+          borderTop: 1,
+          borderColor: 'divider',
+          pt: 4,
+          pb: { xs: 2, md: 4 },
+        }}
+      >
         <Typography
           variant="caption"
           color="text.disabled"
-          sx={{ display: 'block', mt: 6, fontFamily: 'var(--font-geist-mono)' }}
+          sx={{ display: 'block', fontFamily: 'var(--font-geist-mono)' }}
         >
           © {new Date().getFullYear()} toolkit · made local
         </Typography>

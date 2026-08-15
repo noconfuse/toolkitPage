@@ -23,6 +23,7 @@ import FolderZipIcon from '@mui/icons-material/FolderZip';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import JSZip from 'jszip';
+import { ToolWorkbench, SidebarTitle } from '@/components/tools/ToolWorkbench';
 import LibImageQuant from 'libimagequant-wasm';
 import { getMozJpeg } from '../_lib/encoders';
 
@@ -361,20 +362,19 @@ export default function ImageCompress() {
   const hasOut = items.some((it) => it.outBlob);
   const savedPct = totalOut > 0 ? Math.max(0, Math.round((1 - totalOut / Math.max(totalOrig, 1)) * 100)) : 0;
 
-  const [dragOver, setDragOver] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // 拖入上传：接收拖到整列区域的图片文件
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files ?? []).filter((f) => SUPPORTED_TYPES[f.type]);
-    if (files.length === 0) {
+  // 拖入上传：接收 ToolWorkbench 外壳转发的文件列表
+  const handleDrop = async (files: FileList | null) => {
+    if (!files) return;
+    const list = Array.from(files).filter((f) => SUPPORTED_TYPES[f.type]);
+    if (list.length === 0) {
       setError('请拖入 PNG / JPG / WebP 图片');
       return;
     }
     setError(null);
     const next: Item[] = [];
-    for (const file of files) {
+    for (const file of list) {
       const kind = SUPPORTED_TYPES[file.type];
       const dataUrl = await readDataUrl(file);
       const img = await loadImage(dataUrl);
@@ -398,78 +398,80 @@ export default function ImageCompress() {
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2, alignItems: 'flex-start' }}>
-      {/* 左侧：图片列表（整列支持拖入） */}
-      <Box
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('Files')) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'copy';
-            if (!dragOver) setDragOver(true);
-          }
-        }}
-        onDragLeave={(e) => {
-          // 只在离开容器本身时清除（避免进入子元素反复闪）
-          if (e.currentTarget === e.target) setDragOver(false);
-        }}
-        onDrop={handleDrop}
-        sx={{
-          flex: 1,
-          minWidth: 0,
-          width: '100%',
-          position: 'relative',
-          borderRadius: 1,
-          transition: 'background-color 160ms ease',
-          outline: dragOver ? '2px dashed' : '2px dashed transparent',
-          outlineColor: dragOver ? 'primary.main' : 'transparent',
-          outlineOffset: dragOver ? -2 : 0,
-        }}
-      >
-        {items.length === 0 ? (
-          <Box
-            sx={{
-              width: '100%',
-              minHeight: 320,
-              borderRadius: 1,
-              border: 1,
-              borderColor: 'divider',
-              bgcolor: '#fafaf7',
-              backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 1.5,
-              color: 'text.secondary',
-            }}
+    <ToolWorkbench
+      hasContent={items.length > 0}
+      sidebarWidth={280}
+      onPickFile={() => fileInputRef.current?.click()}
+      onDrop={handleDrop}
+      emptyState={
+        <Box
+          onClick={() => fileInputRef.current?.click()}
+          sx={{
+            width: '100%',
+            minHeight: 320,
+            borderRadius: 1,
+            border: 1,
+            borderColor: 'divider',
+            bgcolor: '#fafaf7',
+            backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
+            backgroundSize: '20px 20px',
+            backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 1.5,
+            color: 'text.secondary',
+            cursor: 'pointer',
+          }}
+        >
+          <Box sx={{ fontSize: 36, opacity: 0.5 }} />
+          <Typography variant="body2">上传 PNG / JPG / WebP 开始压缩</Typography>
+          <Button
+            variant="contained"
+            size="small"
+            component="label"
+            startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
+            sx={{ mt: 1 }}
+            onClick={(e) => e.stopPropagation()}
           >
-            <Box sx={{ fontSize: 36, opacity: 0.5 }}>🗜️</Box>
-            <Typography variant="body2">上传 PNG / JPG / WebP 开始压缩</Typography>
-            <Button
-              variant="contained"
-              size="small"
-              component="label"
-              startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
-              sx={{ mt: 1 }}
-            >
-              选择图片
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                hidden
-                onChange={handleAdd}
-              />
-            </Button>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, mt: 0.5 }}>
-              所有处理在浏览器内完成 · 保留原格式
-            </Typography>
-          </Box>
-        ) : (
+            选择图片
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              hidden
+              onChange={handleAdd}
+            />
+          </Button>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, mt: 0.5 }}>
+            所有处理在浏览器内完成 · 保留原格式
+          </Typography>
+        </Box>
+      }
+      sidebar={
+        <Box>
+          <SidebarTitle>策略</SidebarTitle>
           <Stack spacing={1.5}>
-            {items.map((it) => {
+            <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                保留格式
+              </Typography>
+              <Typography variant="caption" sx={{ color: 'text.primary', fontFamily: 'var(--font-geist-mono)' }}>
+                原 → 原
+              </Typography>
+            </Box>
+            <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, mt: 1 }}>
+              自动选择最优压缩方式，保留原格式与尺寸，无需手动调参。图片全部在浏览器本地处理，不会上传。
+            </Typography>
+          </Stack>
+        </Box>
+      }
+    >
+      {/* 左主区：图片列表（拖拽上传由 ToolWorkbench 外壳统一处理） */}
+      <Stack spacing={1.5}>
+        {items.map((it) => {
               const saved =
                 it.outSize !== undefined
                   ? Math.round((1 - it.outSize / Math.max(it.origSize, 1)) * 100)
@@ -635,7 +637,6 @@ export default function ImageCompress() {
               );
             })}
           </Stack>
-        )}
 
         {/* 操作行 */}
         {items.length > 0 && (
@@ -643,6 +644,7 @@ export default function ImageCompress() {
             <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
               继续添加
               <input
+                ref={fileInputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 multiple
@@ -700,28 +702,6 @@ export default function ImageCompress() {
             />
           </Box>
         )}
-      </Box>
-
-      {/* 右栏：参数 */}
-      <Box sx={{ width: { xs: '100%', lg: 280 }, flexShrink: 0 }}>
-        <Typography variant="overline" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 1.5 }}>
-          策略
-        </Typography>
-
-        <Stack spacing={1.5}>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
-            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
-              保留格式
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.primary', fontFamily: 'var(--font-geist-mono)' }}>
-              原 → 原
-            </Typography>
-          </Box>
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, mt: 1 }}>
-            自动选择最优压缩方式，保留原格式与尺寸，无需手动调参。图片全部在浏览器本地处理，不会上传。
-          </Typography>
-        </Stack>
-      </Box>
-    </Box>
+    </ToolWorkbench>
   );
 }

@@ -1,4 +1,7 @@
 /** @type {import('next').NextConfig} */
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -14,10 +17,10 @@ const nextConfig = {
       },
     ];
   },
-  webpack: (config, { isServer }) => {
-    // pdfjs-dist 5 是纯 ESM，webpack 5 默认会把它转 CJS；
-    // 浏览器侧直接当 ESM 处理，避免 Object.defineProperty 报错。
+  webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
+      // pdfjs-dist 5 是纯 ESM，webpack 5 默认会把它转 CJS；
+      // 浏览器侧直接当 ESM 处理，避免 Object.defineProperty 报错。
       config.experiments = { ...config.experiments, outputModule: true };
       config.module.rules.push({
         test: /\.m?js$/,
@@ -25,6 +28,17 @@ const nextConfig = {
         type: 'javascript/auto',
         resolve: { fullySpecified: false },
       });
+      // @jsquash/oxipng 的多线程 codec（wasm-bindgen-rayon）只会在 Worker 内被启用，
+      // 而本应用压缩全部跑在主线程（永远走单线程 codec/pkg/）。把它替换为 stub，
+      // 避免 rayon 并行 chunk 与 webpack runtime 产生循环依赖告警。
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(
+          /pkg-parallel\/squoosh_oxipng\.js$/,
+          (resource) => {
+            resource.request = require.resolve('./src/lib/oxipng-mt-stub.js');
+          }
+        )
+      );
     }
     return config;
   },

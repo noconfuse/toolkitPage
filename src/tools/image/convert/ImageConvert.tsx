@@ -21,6 +21,7 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import JSZip from 'jszip';
 import { getMozJpeg } from '../_lib/encoders';
+import { ToolWorkbench } from '@/components/tools/ToolWorkbench';
 
 type Target = 'png' | 'jpeg' | 'webp';
 
@@ -145,7 +146,6 @@ export default function ImageConvert() {
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
-    setDragOver(false);
     const files = Array.from(e.dataTransfer.files ?? []).filter((f) => SUPPORTED_TYPES[f.type]);
     if (files.length === 0) {
       setError('请拖入 PNG / JPG / WebP 图片');
@@ -294,47 +294,17 @@ export default function ImageConvert() {
   };
 
   const hasOut = items.some((it) => it.outBlob);
-  const [dragOver, setDragOver] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
-    <Box
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'copy';
-          if (!dragOver) setDragOver(true);
-        }
+    <ToolWorkbench
+      hasContent={items.length > 0}
+      onDrop={(files) => {
+        if (files && files.length > 0) handleDrop({ preventDefault: () => {}, dataTransfer: { files } } as unknown as React.DragEvent);
       }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragOver(false);
-      }}
-      onDrop={handleDrop}
-      sx={{
-        position: 'relative',
-        borderRadius: 1,
-        outline: dragOver ? '2px dashed' : '2px dashed transparent',
-        outlineColor: dragOver ? 'primary.main' : 'transparent',
-        outlineOffset: dragOver ? -2 : 0,
-      }}
-    >
-      {/* 全部转换快捷操作 */}
-      {items.length > 0 && (
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 2, alignItems: { xs: 'stretch', sm: 'center' } }}>
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, flexShrink: 0 }}>
-            全部转换为
-          </Typography>
-          <ToggleButtonGroup exclusive size="small" value={null} onChange={(_, v) => v && convertAll(v as Target)}>
-            {ALL_TARGETS.map((t) => (
-              <ToggleButton key={t} value={t} sx={{ px: 2, fontSize: 13 }} disabled={working}>
-                {LABEL[t]}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-        </Stack>
-      )}
-
-      {items.length === 0 ? (
+      emptyState={
         <Box
+          onClick={() => fileInputRef.current?.click()}
           sx={{
             width: '100%',
             minHeight: 320,
@@ -351,9 +321,9 @@ export default function ImageConvert() {
             justifyContent: 'center',
             gap: 1.5,
             color: 'text.secondary',
+            cursor: 'pointer',
           }}
         >
-          <Box sx={{ fontSize: 36, opacity: 0.5 }}>🔄</Box>
           <Typography variant="body2">上传 PNG / JPG / WebP，选择目标格式开始转换</Typography>
           <Button
             variant="contained"
@@ -361,9 +331,11 @@ export default function ImageConvert() {
             component="label"
             startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
             sx={{ mt: 1 }}
+            onClick={(e) => e.stopPropagation()}
           >
             选择图片
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/png,image/jpeg,image/webp"
               multiple
@@ -375,9 +347,35 @@ export default function ImageConvert() {
             所有处理在浏览器内完成 · 保持原尺寸
           </Typography>
         </Box>
-      ) : (
-        <Stack spacing={1.5}>
-          {items.map((it) => (
+      }
+    >
+      {/* 全部转换快捷操作 */}
+      {items.length > 0 && (
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.5}
+          sx={{ mb: 2, alignItems: { xs: 'stretch', sm: 'center' } }}
+        >
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, flexShrink: 0 }}>
+            全部转换为
+          </Typography>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={null}
+            onChange={(_, v) => v && convertAll(v as Target)}
+          >
+            {ALL_TARGETS.map((t) => (
+              <ToggleButton key={t} value={t} sx={{ px: 2, fontSize: 13 }} disabled={working}>
+                {LABEL[t]}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Stack>
+      )}
+
+      <Stack spacing={1.5}>
+        {items.map((it) => (
             <Box
               key={it.id}
               sx={{
@@ -490,7 +488,6 @@ export default function ImageConvert() {
             </Box>
           ))}
         </Stack>
-      )}
 
       {items.length > 0 && (
         <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
@@ -535,6 +532,6 @@ export default function ImageConvert() {
           <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
         </Box>
       )}
-    </Box>
+    </ToolWorkbench>
   );
 }

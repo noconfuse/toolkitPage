@@ -6,6 +6,7 @@ export type Rect = { x: number; y: number; w: number; h: number };
 
 export type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
+// 默认画布尺寸（无底图时使用）。有底图/纯色背景时，会被动态调整为底图尺寸。
 export const CANVAS_W = 1200;
 export const CANVAS_H = 800;
 

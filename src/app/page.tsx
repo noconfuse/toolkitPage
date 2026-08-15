@@ -17,6 +17,8 @@ import {
   ThumbPdfMerge,
   ThumbPdfStamp,
   ThumbQrCode,
+  ThumbRemoveWatermark,
+  ThumbBackgroundReplace,
   ThumbWatermark,
 } from '@/components/visuals';
 
@@ -45,6 +47,8 @@ const THUMBS: Record<string, React.ReactNode> = {
   'pdf-image-convert': <ThumbPdfImageConvert />,
   'pdf-merge': <ThumbPdfMerge />,
   'image-watermark': <ThumbWatermark />,
+  'image-remove-watermark': <ThumbRemoveWatermark />,
+  'image-background-replace': <ThumbBackgroundReplace />,
 };
 
 export default function HomePage() {

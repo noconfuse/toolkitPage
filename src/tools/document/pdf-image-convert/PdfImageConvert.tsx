@@ -485,6 +485,13 @@ type OutputItem = {
   height: number;
 };
 
+type PageThumb = {
+  pageNumber: number;
+  url: string;
+  width: number;
+  height: number;
+};
+
 function PdfToImages() {
   const [pdfFile, setPdfFile] = React.useState<File | null>(null);
   const [doc, setDoc] = React.useState<PDFDocumentProxy | null>(null);
@@ -493,6 +500,7 @@ function PdfToImages() {
   const [scale, setScale] = React.useState(2); // 1=72dpi, 2=144dpi
   const [pageRange, setPageRange] = React.useState(''); // 空 = 全部
   const [outputs, setOutputs] = React.useState<OutputItem[]>([]);
+  const [thumbs, setThumbs] = React.useState<PageThumb[]>([]);
   const [progress, setProgress] = React.useState(0);
   const [working, setWorking] = React.useState(false);
   const [, setError] = React.useState<string | null>(null);
@@ -501,6 +509,7 @@ function PdfToImages() {
     return () => {
       doc?.destroy();
       outputs.forEach((o) => URL.revokeObjectURL(o.url));
+      thumbs.forEach((t) => URL.revokeObjectURL(t.url));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -513,9 +522,11 @@ function PdfToImages() {
       return;
     }
     setError(null);
-    // 清掉旧导出
+    // 清掉旧导出和旧缩略图
     outputs.forEach((o) => URL.revokeObjectURL(o.url));
+    thumbs.forEach((t) => URL.revokeObjectURL(t.url));
     setOutputs([]);
+    setThumbs([]);
     setPdfFile(file);
     try {
       const data = await file.arrayBuffer();
@@ -523,6 +534,24 @@ function PdfToImages() {
       doc?.destroy();
       setDoc(newDoc);
       setPageCount(newDoc.numPages);
+      // 生成所有页的低分辨率缩略图（用于预览列展示）
+      const newThumbs: PageThumb[] = [];
+      for (let n = 1; n <= newDoc.numPages; n++) {
+        const page = await newDoc.getPage(n);
+        // 缩略图固定 ~120px 宽，比例与原页面一致
+        const baseVp = page.getViewport({ scale: 1 });
+        const thumbScale = 120 / baseVp.width;
+        const vp = page.getViewport({ scale: thumbScale });
+        const canvas = document.createElement('canvas');
+        canvas.width = vp.width;
+        canvas.height = vp.height;
+        await page.render({ canvas, viewport: vp }).promise;
+        const blob: Blob = await new Promise((resolve, reject) => {
+          canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob 失败'))), 'image/png');
+        });
+        newThumbs.push({ pageNumber: n, url: URL.createObjectURL(blob), width: vp.width, height: vp.height });
+      }
+      setThumbs(newThumbs);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'PDF 加载失败');
     }
@@ -619,6 +648,8 @@ function PdfToImages() {
     setPageCount(0);
     outputs.forEach((o) => URL.revokeObjectURL(o.url));
     setOutputs([]);
+    thumbs.forEach((t) => URL.revokeObjectURL(t.url));
+    setThumbs([]);
     setPageRange('');
   };
 
@@ -671,8 +702,25 @@ function PdfToImages() {
               </Typography>
             </Stack>
 
-            {outputs.length > 0 ? (
-              <Box>
+            {/* 预览列：最大高度 70vh，避免长 PDF / 竖长比例把页面撑很高。
+                内部按需滚动。 */}
+            <Box
+              sx={{
+                maxHeight: '70vh',
+                overflowY: 'auto',
+                borderRadius: 1,
+                border: 1,
+                borderColor: 'divider',
+                bgcolor: '#fafaf7',
+                backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
+                backgroundSize: '20px 20px',
+                backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+                p: 2,
+                '&::-webkit-scrollbar': { width: 6 },
+                '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 3 },
+              }}
+            >
+              {outputs.length > 0 ? (
                 <Box
                   sx={{
                     display: 'grid',
@@ -689,7 +737,7 @@ function PdfToImages() {
                         borderColor: 'divider',
                         borderRadius: 1,
                         overflow: 'hidden',
-                        bgcolor: '#fafaf7',
+                        bgcolor: '#ffffff',
                         aspectRatio: `${o.width} / ${o.height}`,
                         cursor: 'pointer',
                         transition: 'border-color 160ms ease',
@@ -719,38 +767,77 @@ function PdfToImages() {
                     </Box>
                   ))}
                 </Box>
+              ) : thumbs.length > 0 ? (
+                // 上传后还没导出：显示所有页的 PDF 缩略图预览（用户原本看不到 PDF 的修复点）
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                    gap: 1.5,
+                  }}
+                >
+                  {thumbs.map((t) => (
+                    <Box
+                      key={t.pageNumber}
+                      sx={{
+                        position: 'relative',
+                        border: 1,
+                        borderColor: 'divider',
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                        bgcolor: '#ffffff',
+                        aspectRatio: `${t.width} / ${t.height}`,
+                      }}
+                    >
+                      <img
+                        src={t.url}
+                        alt={`page ${t.pageNumber}`}
+                        style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain' }}
+                      />
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 4,
+                          left: 4,
+                          px: 0.75, py: 0.25,
+                          fontSize: 10,
+                          fontFamily: 'var(--font-geist-mono)',
+                          bgcolor: 'rgba(255,255,255,0.85)',
+                          borderRadius: 0.5,
+                        }}
+                      >
+                        p{t.pageNumber}
+                      </Box>
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Box
+                  sx={{
+                    minHeight: 200,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'text.secondary',
+                    fontSize: 13,
+                  }}
+                >
+                  PDF 加载中…
+                </Box>
+              )}
+            </Box>
 
-                <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={downloadAll}
-                    startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-                  >
-                    全部下载（{outputs.length} 张）
-                  </Button>
-                </Stack>
-              </Box>
-            ) : (
-              <Box
-                sx={{
-                  minHeight: 240,
-                  borderRadius: 1,
-                  border: 1,
-                  borderColor: 'divider',
-                  bgcolor: '#fafaf7',
-                  backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-                  backgroundSize: '20px 20px',
-                  backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: 'text.secondary',
-                  fontSize: 13,
-                }}
-              >
-                调整右侧参数后点「导出图片」
-              </Box>
+            {outputs.length > 0 && (
+              <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={downloadAll}
+                  startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+                >
+                  全部下载（{outputs.length} 张）
+                </Button>
+              </Stack>
             )}
 
             {working && (

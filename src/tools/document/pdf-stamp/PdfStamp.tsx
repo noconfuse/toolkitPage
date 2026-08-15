@@ -529,6 +529,22 @@ export default function PdfStamp() {
         {!pdfFile ? (
           <EmptyPdf onSelect={handlePdfChange} />
         ) : (
+          // 预览列容器：maxHeight 限制，防止长 PDF 把页面撑高；内部居中显示
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              maxHeight: '70vh',
+              overflow: 'auto',
+              bgcolor: '#fafaf7',
+              backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
+              backgroundSize: '20px 20px',
+              backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+              borderRadius: 1,
+              border: 1,
+              borderColor: 'divider',
+            }}
+          >
           <Box
             ref={surfaceRef}
             onMouseDown={onSurfaceMouseDown}
@@ -536,14 +552,12 @@ export default function PdfStamp() {
               position: 'relative',
               width: 'fit-content',
               maxWidth: '100%',
+              maxHeight: '70vh',
               borderRadius: 1,
               overflow: 'hidden',
               border: 1,
               borderColor: 'divider',
               bgcolor: '#fafaf7',
-              backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
               userSelect: 'none',
               cursor:
                 !selectedLayer
@@ -587,6 +601,7 @@ export default function PdfStamp() {
                 onRotateDown={tryStartDrag}
               />
             )}
+          </Box>
           </Box>
         )}
 

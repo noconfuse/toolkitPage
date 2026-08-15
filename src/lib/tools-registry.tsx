@@ -3,6 +3,7 @@ import ImageIcon from '@mui/icons-material/Image';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import QrCode2Icon from '@mui/icons-material/QrCode2';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
+import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
 export type ToolId = string;
 
@@ -290,6 +291,82 @@ export const TOOLS: ReadonlyArray<Tool> = [
       {
         q: '会改变原图吗？',
         a: '不会，输出保持原尺寸与格式，原文件保持不变。',
+      },
+    ],
+  },
+  {
+    id: 'image-remove-watermark',
+    categoryId: 'image',
+    title: '图片去水印',
+    shortTitle: '去水印',
+    href: '/tools/image/remove-watermark',
+    description: '画笔涂抹水印区域，AI 在浏览器内重建被遮挡的像素，纯浏览器处理。',
+    longDescription:
+      '在线图片去水印工具：上传图片后用画笔涂抹水印区域，AI 会根据周围内容重建被遮挡的部分。支持拖动分割线对比处理前后效果，也可继续涂抹补充修复，一键下载 PNG。所有处理在浏览器内完成，文件不上传。',
+    icon: <ImageIcon />,
+    available: true,
+    keywords: [
+      '图片去水印',
+      '去水印',
+      '去水印工具',
+      '去除水印',
+      'AI去水印',
+      '半透明水印去除',
+      '文字水印去除',
+      'logo水印去除',
+    ],
+    faq: [
+      {
+        q: '图片会上传到服务器吗？',
+        a: '不会，所有处理都在浏览器内完成，文件不会离开你的设备。',
+      },
+      {
+        q: '能去除所有水印吗？',
+        a: '适合半透明文字或 logo 水印：用画笔涂抹水印区域后，AI 会用周围的内容把它重建掉。对大面积、与背景深度融合的水印效果有限。',
+      },
+      {
+        q: '为什么第一次使用要等一会儿？',
+        a: '首次使用需要下载并准备修复能力，加载完成后会保留在本地，之后使用会快很多。',
+      },
+    ],
+  },
+  {
+    id: 'image-background-replace',
+    categoryId: 'image',
+    title: '图片去背景',
+    shortTitle: '去背景',
+    href: '/tools/image/background-replace',
+    description: 'AI 自动识别主体并生成透明背景 PNG，下载后可叠到任意背景图上。',
+    longDescription:
+      '在线图片去背景工具：上传图片后 AI 自动识别主体并生成带透明通道的 PNG 抠图。常见人像、商品、物体均可精准抠图，毛发和半透明边缘也是处理重点。下载 PNG 后可到「图片合成」工具叠加到任意背景图上。所有处理在浏览器内完成，文件不上传。',
+    icon: <AutoFixHighIcon />,
+    available: true,
+    keywords: [
+      '图片去背景',
+      '去背景',
+      '抠图',
+      'AI抠图',
+      '背景移除',
+      '透明背景',
+      '图片背景',
+      '主体识别',
+    ],
+    faq: [
+      {
+        q: '图片会上传到服务器吗？',
+        a: '不会，所有处理都在浏览器内完成，文件不会离开你的设备。',
+      },
+      {
+        q: '抠图后怎么换背景？',
+        a: '下载带透明通道的 PNG 后，到「图片合成」工具把它叠加到任意背景图上即可，纯色、模糊、上传图片都可以。',
+      },
+      {
+        q: '主体识别准确吗？',
+        a: '对常见的商品、人像、物体效果都不错。毛发和半透明边缘也是处理重点。复杂背景或主体与背景颜色相近时可能需要手动调整。',
+      },
+      {
+        q: '首次使用为什么慢？',
+        a: '首次需要下载识别模型（约 40MB），下载完后会保留在本地，之后使用会秒开。',
       },
     ],
   },

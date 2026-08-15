@@ -5,6 +5,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import Slider from '@mui/material/Slider';
+import TextField from '@mui/material/TextField';
 import Tooltip from '@mui/material/Tooltip';
 import Stack from '@mui/material/Stack';
 import IconButton from '@mui/material/IconButton';
@@ -14,6 +15,8 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
+import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
 import {
   CANVAS_W,
   CANVAS_H,
@@ -26,6 +29,7 @@ import {
   type Point,
 } from './_lib/transform';
 import { SelectedOverlay } from '@/components/tools/SelectedOverlay';
+import { resolveImageFromSearch } from '@/lib/cross-tool-image';
 
 type CompositeMode = GlobalCompositeOperation;
 
@@ -61,12 +65,11 @@ const HIT_SIZE = 12; // px，旋转后的屏幕坐标
 export default function ImageCombine() {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const baseFileInputRef = React.useRef<HTMLInputElement | null>(null);
-  const overlayFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
 
-  const [baseImg, setBaseImg] = React.useState<HTMLImageElement | null>(null);
-  const [baseName, setBaseName] = React.useState<string | null>(null);
   const [layers, setLayers] = React.useState<Layer[]>([]);
+  // 背景色（画布属性，不参与层级）：color + opacity
+  const [bgColor, setBgColor] = React.useState<{ color: string; opacity: number } | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [dragState, setDragState] = React.useState<
     | { kind: 'none' }
@@ -89,6 +92,9 @@ export default function ImageCombine() {
       }
   >({ kind: 'none' });
   const [scale, setScale] = React.useState(1); // 屏幕 px / canvas px
+  // 画布真实像素（用户可设置）。界面 CSS：宽度固定占满容器，高度按 宽/高 比例自适应
+  const [canvasW, setCanvasW] = React.useState(CANVAS_W);
+  const [canvasH, setCanvasH] = React.useState(CANVAS_H);
 
   // ───────── 重绘 ─────────
   const render = React.useCallback(() => {
@@ -98,17 +104,18 @@ export default function ImageCombine() {
     if (!ctx) return;
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    ctx.clearRect(0, 0, canvasW, canvasH);
 
-    if (baseImg) {
-      const r = Math.min(CANVAS_W / baseImg.width, CANVAS_H / baseImg.height);
-      const w = baseImg.width * r;
-      const h = baseImg.height * r;
-      const x = (CANVAS_W - w) / 2;
-      const y = (CANVAS_H - h) / 2;
-      ctx.drawImage(baseImg, x, y, w, h);
+    // 背景色填充（画布属性，不参与层级）
+    if (bgColor) {
+      ctx.save();
+      ctx.globalAlpha = bgColor.opacity;
+      ctx.fillStyle = bgColor.color;
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      ctx.restore();
     }
 
+    // 图层按数组顺序从底到顶绘制（layers[0] 最底）
     for (const layer of layers) {
       ctx.save();
       ctx.globalAlpha = layer.opacity;
@@ -118,7 +125,7 @@ export default function ImageCombine() {
       ctx.drawImage(layer.img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
       ctx.restore();
     }
-  }, [baseImg, layers]);
+  }, [bgColor, canvasW, canvasH, layers]);
 
   React.useEffect(() => {
     render();
@@ -130,11 +137,11 @@ export default function ImageCombine() {
       const el = surfaceRef.current;
       if (!el) return null;
       const rect = el.getBoundingClientRect();
-      const x = ((sx - rect.left) / rect.width) * CANVAS_W;
-      const y = ((sy - rect.top) / rect.height) * CANVAS_H;
+      const x = ((sx - rect.left) / rect.width) * canvasW;
+      const y = ((sy - rect.top) / rect.height) * canvasH;
       return { x, y };
     },
-    [],
+    [canvasW, canvasH],
   );
 
   // 暴露 scale 给覆盖层用
@@ -143,13 +150,13 @@ export default function ImageCombine() {
     if (!el) return;
     const update = () => {
       const rect = el.getBoundingClientRect();
-      setScale(rect.width / CANVAS_W);
+      setScale(rect.width / canvasW);
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [canvasW]);
 
   // ───────── 文件读取 ─────────
   const readImage = (file: File) =>
@@ -166,37 +173,91 @@ export default function ImageCombine() {
       reader.readAsDataURL(file);
     });
 
-  // ───────── 底图 ─────────
-  const handleBaseFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const img = await readImage(file);
-    setBaseImg(img);
-    setBaseName(file.name);
-    setLayers([]);
-    setSelectedId(null);
-    e.target.value = '';
+  // ───────── 接图（URL ?fg= / ?bg= → sessionStorage → File → 加载）─────────
+  // 直接读 window.location.search，避免 useSearchParams 在 Next 14 需要 Suspense 包裹
+  const inboundHandledRef = React.useRef(false);
+  React.useEffect(() => {
+    if (inboundHandledRef.current) return;
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const resolved = resolveImageFromSearch(url.searchParams);
+    if (Object.keys(resolved).length === 0) return;
+    inboundHandledRef.current = true;
+    (async () => {
+      // ?bg= 作为底层图层加入，?fg= 作为顶层图层加入；均为普通图层，层级可自由调整
+      const incoming: Layer[] = [];
+      if (resolved.bg) {
+        const img = await readImage(resolved.bg);
+        // bg 层铺满画布（contain 居中），保持原图比例
+        const br = Math.min(canvasW / img.width, canvasH / img.height);
+        incoming.push({
+          id: `layer-${Date.now()}-bg`,
+          img,
+          cx: canvasW / 2,
+          cy: canvasH / 2,
+          w: img.width * br,
+          h: img.height * br,
+          rotation: 0,
+          opacity: 1,
+          mode: 'source-over',
+          name: resolved.bg.name,
+        });
+      }
+      if (resolved.fg) {
+        const img = await readImage(resolved.fg);
+        const ratio = Math.min((canvasW * 0.6) / img.width, (canvasH * 0.6) / img.height);
+        incoming.push({
+          id: `layer-${Date.now()}-fg`,
+          img,
+          cx: canvasW / 2,
+          cy: canvasH / 2,
+          w: img.width * ratio,
+          h: img.height * ratio,
+          rotation: 0,
+          opacity: 1,
+          mode: 'source-over',
+          name: resolved.fg.name,
+        });
+      }
+      if (incoming.length > 0) {
+        setLayers((prev) => [...prev, ...incoming]);
+        setSelectedId(incoming[incoming.length - 1].id);
+      }
+      // 清理 URL 上的 session: 参数，避免刷新再次触发
+      url.searchParams.delete('fg');
+      url.searchParams.delete('bg');
+      window.history.replaceState({}, '', url.toString());
+    })();
+  }, [canvasW, canvasH]);
+
+  // ───────── 背景色（画布属性，不参与层级） ─────────
+  // 选色时保留当前透明度；设透明度时不改变颜色；可单独清除
+  const handleColorBase = (color: string) => {
+    setBgColor((prev) => ({ color, opacity: prev?.opacity ?? 1 }));
+  };
+  const handleBgOpacity = (opacity: number) => {
+    setBgColor((prev) => (prev ? { ...prev, opacity } : null));
+  };
+  const handleClearBg = () => {
+    setBgColor(null);
   };
 
-  // ───────── 加叠加层 ─────────
-  const handleOverlayFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // ───────── 添加图层 ─────────
+  // 新图默认添加到顶层；画布尺寸由用户设置，添加图片不改动画布
+  const handleAddImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!baseImg) return;
     const img = await readImage(file);
     // 默认 contain 到画布的 60%，居中
-    const ratio = Math.min(
-      (CANVAS_W * 0.6) / img.width,
-      (CANVAS_H * 0.6) / img.height,
-    );
+    const ratio = Math.min((canvasW * 0.6) / img.width, (canvasH * 0.6) / img.height);
     const w = img.width * ratio;
     const h = img.height * ratio;
     const id = `layer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const layer: Layer = {
       id,
       img,
-      cx: CANVAS_W / 2,
-      cy: CANVAS_H / 2,
+      cx: canvasW / 2,
+      cy: canvasH / 2,
       w,
       h,
       rotation: 0,
@@ -332,15 +393,15 @@ export default function ImageCombine() {
         prev.map((l) => {
           if (l.id !== dragState.layerId) return l;
           if (dragState.kind === 'move') {
-            const c = computeMove(dragState, p, l.w, l.h, l.rotation, { w: CANVAS_W, h: CANVAS_H });
+            const c = computeMove(dragState, p, l.w, l.h, l.rotation, { w: canvasW, h: canvasH });
             return { ...l, cx: c.cx, cy: c.cy };
           }
           if (dragState.kind === 'resize') {
-            const s = computeResize(dragState, p, { w: CANVAS_W, h: CANVAS_H });
+            const s = computeResize(dragState, p, { w: canvasW, h: canvasH });
             return { ...l, w: s.w, h: s.h }; // 中心不变
           }
           if (dragState.kind === 'rotate') {
-            const r = computeRotate(dragState, p, l.w, l.h, { w: CANVAS_W, h: CANVAS_H });
+            const r = computeRotate(dragState, p, l.w, l.h, { w: canvasW, h: canvasH });
             return { ...l, rotation: r.rotation, cx: r.cx, cy: r.cy };
           }
           return l;
@@ -356,7 +417,7 @@ export default function ImageCombine() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [dragState, screenToCanvas, scale]);
+  }, [dragState, screenToCanvas, scale, canvasW, canvasH]);
 
   // ───────── 键盘快捷键 ─────────
   React.useEffect(() => {
@@ -402,10 +463,24 @@ export default function ImageCombine() {
     setLayers((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   };
 
-  const moveLayer = (id: string, dir: 'up' | 'down') => {
+  const moveLayer = (id: string, dir: 'up' | 'down' | 'top' | 'bottom') => {
     setLayers((prev) => {
       const idx = prev.findIndex((l) => l.id === id);
       if (idx < 0) return prev;
+      if (dir === 'top') {
+        if (idx === prev.length - 1) return prev;
+        const next = [...prev];
+        const [item] = next.splice(idx, 1);
+        next.push(item);
+        return next;
+      }
+      if (dir === 'bottom') {
+        if (idx === 0) return prev;
+        const next = [...prev];
+        const [item] = next.splice(idx, 1);
+        next.unshift(item);
+        return next;
+      }
       const target = dir === 'up' ? idx + 1 : idx - 1;
       if (target < 0 || target >= prev.length) return prev;
       const next = [...prev];
@@ -482,9 +557,8 @@ export default function ImageCombine() {
   };
 
   const handleClear = () => {
-    setBaseImg(null);
-    setBaseName(null);
     setLayers([]);
+    setBgColor(null);
     setSelectedId(null);
   };
 
@@ -499,13 +573,16 @@ export default function ImageCombine() {
     >
       {/* ───────── 画布 + 覆盖层 + 下方按钮 ───────── */}
       <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+        {/* 画布预览列：固定 maxHeight 70vh，避免用户设置的长条画布（宽 800 × 高 3000）
+            把页面撑得非常高。CSS maxHeight 与 aspectRatio 冲突时 maxHeight 优先。 */}
         <Box
           ref={surfaceRef}
           onMouseDown={onSurfaceMouseDown}
           sx={{
             position: 'relative',
             width: '100%',
-            aspectRatio: `${CANVAS_W} / ${CANVAS_H}`,
+            aspectRatio: `${canvasW} / ${canvasH}`,
+            maxHeight: '70vh',
             borderRadius: 1,
             overflow: 'hidden',
             border: 1,
@@ -526,8 +603,8 @@ export default function ImageCombine() {
         >
           <canvas
             ref={canvasRef}
-            width={CANVAS_W}
-            height={CANVAS_H}
+            width={canvasW}
+            height={canvasH}
             style={{
               position: 'absolute',
               inset: 0,
@@ -542,15 +619,15 @@ export default function ImageCombine() {
           {selectedLayer && (
             <SelectedOverlay
               layer={selectedLayer}
-              bounds={{ w: CANVAS_W, h: CANVAS_H }}
+              bounds={{ w: canvasW, h: canvasH }}
               onDelete={() => deleteLayer(selectedLayer.id)}
               onCornerDown={tryStartDrag}
               onRotateDown={tryStartDrag}
             />
           )}
 
-          {/* 空底图占位 */}
-          {!baseImg && (
+          {/* 空状态占位：无图层且无背景色 */}
+          {layers.length === 0 && !bgColor && (
             <Box
               sx={{
                 position: 'absolute',
@@ -565,7 +642,7 @@ export default function ImageCombine() {
               }}
             >
               <AddPhotoAlternateIcon sx={{ fontSize: 36, opacity: 0.5 }} />
-              <Typography variant="body2">上传第一张图作为底图</Typography>
+              <Typography variant="body2">添加图片开始合成</Typography>
             </Box>
           )}
         </Box>
@@ -587,60 +664,36 @@ export default function ImageCombine() {
             component="label"
             startIcon={<AddPhotoAlternateIcon sx={{ fontSize: 16 }} />}
           >
-            {baseImg ? '换底图' : '上传底图'}
+            添加图片
             <input
               ref={baseFileInputRef}
               type="file"
               accept="image/*"
               hidden
-              onChange={handleBaseFile}
+              onChange={handleAddImage}
             />
           </Button>
-
-          <Tooltip
-            title={baseImg ? '在画布上添加新的一层' : '请先上传底图'}
-            placement="top"
-          >
-            <span>
-              <Button
-                variant="outlined"
-                size="small"
-                component="label"
-                disabled={!baseImg}
-                startIcon={<AddPhotoAlternateIcon sx={{ fontSize: 16 }} />}
-              >
-                叠加图片
-                <input
-                  ref={overlayFileInputRef}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={handleOverlayFile}
-                />
-              </Button>
-            </span>
-          </Tooltip>
 
           <Button
             variant="outlined"
             color="inherit"
             size="small"
-            startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
             onClick={handleDownload}
-            disabled={!baseImg}
+            disabled={layers.length === 0}
           >
-            下载
+            画布下载
           </Button>
 
-          <Tooltip title="去除周围透明像素后导出（结果尺寸小于画布）">
+          <Tooltip title="去除周围透明像素后导出（结果尺寸小于画布，默认下载）">
             <Button
-              variant="outlined"
-              color="inherit"
+              variant="contained"
+              color="primary"
               size="small"
+              startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
               onClick={handleTrimmedDownload}
-              disabled={!baseImg}
+              disabled={layers.length === 0}
             >
-              裁剪导出
+              下载
             </Button>
           </Tooltip>
 
@@ -650,7 +703,7 @@ export default function ImageCombine() {
             size="small"
             startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
             onClick={handleClear}
-            disabled={!baseImg}
+            disabled={layers.length === 0 && !bgColor}
           >
             清空
           </Button>
@@ -668,15 +721,125 @@ export default function ImageCombine() {
               whiteSpace: 'nowrap',
             }}
           >
-            {baseImg
-              ? `${baseName ?? ''} · ${layers.length} 个叠加层`
-              : `${CANVAS_W} × ${CANVAS_H}`}
+            {layers.length > 0
+              ? `${layers[0].name} · ${layers.length} 个图层`
+              : `${canvasW} × ${canvasH}`}
           </Typography>
         </Stack>
       </Box>
 
-      {/* ───────── 右栏：叠加层列表 + 选中层属性 ───────── */}
+      {/* ───────── 右栏：画布设置 + 图层列表 + 选中层属性 ───────── */}
       <Box sx={{ width: { xs: '100%', lg: 280 }, flexShrink: 0 }}>
+        {/* 画布尺寸（真实像素）：界面宽度固定，高度按比例自适应 */}
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            variant="overline"
+            sx={{
+              color: 'text.secondary',
+              fontFamily: 'var(--font-geist-mono)',
+              display: 'block',
+              mb: 1,
+            }}
+          >
+            画布尺寸 (px)
+          </Typography>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <TextField
+              size="small"
+              type="number"
+              value={canvasW}
+              onChange={(e) => {
+                const v = Math.max(1, Math.floor(Number(e.target.value) || CANVAS_W));
+                setCanvasW(v);
+              }}
+              slotProps={{ htmlInput: { min: 1, style: { fontSize: 13 } } }}
+              sx={{ width: 110 }}
+            />
+            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+              ×
+            </Typography>
+            <TextField
+              size="small"
+              type="number"
+              value={canvasH}
+              onChange={(e) => {
+                const v = Math.max(1, Math.floor(Number(e.target.value) || CANVAS_H));
+                setCanvasH(v);
+              }}
+              slotProps={{ htmlInput: { min: 1, style: { fontSize: 13 } } }}
+              sx={{ width: 110 }}
+            />
+          </Stack>
+        </Box>
+
+        {/* 背景色（画布属性）：颜色 + 不透明度 + 单独清除 */}
+        <Box sx={{ mb: 3 }}>
+          <Typography
+            variant="overline"
+            sx={{
+              color: 'text.secondary',
+              fontFamily: 'var(--font-geist-mono)',
+              display: 'block',
+              mb: 1,
+            }}
+          >
+            背景色
+          </Typography>
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+            <Box
+              component="label"
+              sx={{
+                position: 'relative',
+                display: 'inline-flex',
+                cursor: 'pointer',
+              }}
+            >
+              <Box
+                sx={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: '50%',
+                  bgcolor: bgColor?.color ?? '#ffffff',
+                  border: 1,
+                  borderColor: 'divider',
+                  boxShadow: (t) => t.shadows[1],
+                }}
+              />
+              <input
+                type="color"
+                value={bgColor?.color ?? '#ffffff'}
+                onChange={(e) => handleColorBase(e.target.value)}
+                style={{
+                  position: 'absolute',
+                  width: 1,
+                  height: 1,
+                  opacity: 0,
+                  overflow: 'hidden',
+                  clip: 'rect(0 0 0 0)',
+                }}
+              />
+            </Box>
+            <Slider
+              size="small"
+              value={bgColor?.opacity ?? 1}
+              min={0}
+              max={1}
+              step={0.05}
+              onChange={(_, v) => handleBgOpacity(v as number)}
+              disabled={!bgColor}
+              sx={{ flex: 1 }}
+            />
+            <IconButton
+              size="small"
+              onClick={handleClearBg}
+              disabled={!bgColor}
+              title="清除背景色"
+            >
+              <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+            </IconButton>
+          </Stack>
+        </Box>
+
         <Typography
           variant="overline"
           sx={{
@@ -686,7 +849,7 @@ export default function ImageCombine() {
             mb: 1.5,
           }}
         >
-          叠加层 · {layers.length}
+          图层 · {layers.length}
         </Typography>
 
         {layers.length === 0 ? (
@@ -695,7 +858,7 @@ export default function ImageCombine() {
             color="text.disabled"
             sx={{ py: 2, fontSize: 13 }}
           >
-            还没有叠加层
+            还没有图层，先添加图片
           </Typography>
         ) : (
           <Stack
@@ -764,6 +927,17 @@ export default function ImageCombine() {
                       size="small"
                       onClick={(e) => {
                         e.stopPropagation();
+                        moveLayer(layer.id, 'top');
+                      }}
+                      disabled={i === layers.length - 1}
+                      sx={{ p: 0.25 }}
+                    >
+                      <VerticalAlignTopIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         moveLayer(layer.id, 'up');
                       }}
                       disabled={i === layers.length - 1}
@@ -781,6 +955,17 @@ export default function ImageCombine() {
                       sx={{ p: 0.25 }}
                     >
                       <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        moveLayer(layer.id, 'bottom');
+                      }}
+                      disabled={i === 0}
+                      sx={{ p: 0.25 }}
+                    >
+                      <VerticalAlignBottomIcon sx={{ fontSize: 14 }} />
                     </IconButton>
                     <IconButton
                       size="small"
