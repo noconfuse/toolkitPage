@@ -685,7 +685,7 @@ export default function WatermarkTool() {
                   position: 'relative',
                   width: 'fit-content',
                   maxWidth: '100%',
-                  maxHeight: 520,
+                  maxHeight: 480,
                 }}
               >
                 <img
@@ -694,7 +694,7 @@ export default function WatermarkTool() {
                   alt=""
                   draggable={false}
                   decoding="async"
-                  style={{ display: 'block', maxWidth: '100%', maxHeight: 520, width: 'auto', height: 'auto' }}
+                  style={{ display: 'block', maxWidth: '100%', maxHeight: 480, width: 'auto', height: 'auto' }}
                 />
                 <canvas
                   ref={overlayRef}

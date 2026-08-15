@@ -42,32 +42,6 @@ export function BeforeAfterCompare({
   const [ratio, setRatio] = React.useState(50); // 0~100
   const [dragging, setDragging] = React.useState(false);
 
-  // 源图自然尺寸用于 aspect-ratio（配合 maxHeight 限制竖图高度）
-  const [origSize, setOrigSize] = React.useState<{ w: number; h: number } | null>(null);
-  const [resSize, setResSize] = React.useState<{ w: number; h: number } | null>(null);
-
-  React.useEffect(() => {
-    if (!originalUrl) { setOrigSize(null); return; }
-    const img = new Image();
-    img.onload = () => setOrigSize({ w: img.naturalWidth, h: img.naturalHeight });
-    img.src = originalUrl;
-  }, [originalUrl]);
-
-  React.useEffect(() => {
-    if (!resultUrl) { setResSize(null); return; }
-    const img = new Image();
-    img.onload = () => setResSize({ w: img.naturalWidth, h: img.naturalHeight });
-    img.src = resultUrl;
-  }, [resultUrl]);
-
-  // 取两边中较大的宽高比
-  const aspect = React.useMemo(() => {
-    const a = origSize ? origSize.w / origSize.h : null;
-    const b = resSize ? resSize.w / resSize.h : null;
-    if (a && b) return Math.max(a, b);
-    return a ?? b ?? 1;
-  }, [origSize, resSize]);
-
   // 拖拽逻辑
   React.useEffect(() => {
     if (!dragging) return;
@@ -115,26 +89,39 @@ export function BeforeAfterCompare({
         <Typography variant="subtitle2">{resultLabel}</Typography>
       </Box>
 
-      <Box
-        ref={wrapRef}
-        sx={{
-          position: 'relative',
-          border: '1px dashed',
-          borderColor: 'divider',
-          borderRadius: 1,
-          overflow: 'hidden',
-          width: '100%',
-          aspectRatio: aspect,
-          // maxHeight 限制容器高度：竖图不再无限撑高。
-          // CSS 当 maxHeight 与 aspectRatio 冲突时 maxHeight 优先，
-          // 高度被限制在480px，宽度按比例收缩，图片 object-fit:contain 不变形。
-          maxHeight: 480,
-          background: '#fff',
-          userSelect: 'none',
-          touchAction: 'none',
-        }}
-      >
-        {/* 原图：底层整张 */}
+      {/* 内容区：图片等比显示，居中，不固定宽度（隐形图撑开容器，比例 = 图片比例） */}
+      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+        <Box
+          ref={wrapRef}
+          sx={{
+            position: 'relative',
+            border: '1px dashed',
+            borderColor: 'divider',
+            borderRadius: 1,
+            overflow: 'hidden',
+            width: 'fit-content',
+            maxWidth: '100%',
+            maxHeight: 480,
+            background: '#fff',
+            userSelect: 'none',
+            touchAction: 'none',
+          }}
+        >
+          {/* 隐形图撑开容器（original 优先，退化为 result） */}
+          <img
+            src={originalUrl ?? resultUrl ?? undefined}
+            alt=""
+            draggable={false}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              maxHeight: 480,
+              width: 'auto',
+              height: 'auto',
+              visibility: 'hidden',
+            }}
+          />
+          {/* 原图：底层整张 */}
         {hasOriginal && (
           <Box
             sx={{
@@ -278,6 +265,7 @@ export function BeforeAfterCompare({
             <Typography variant="body2">暂无图片</Typography>
           </Box>
         )}
+        </Box>
       </Box>
     </Box>
   );

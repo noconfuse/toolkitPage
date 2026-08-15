@@ -19,7 +19,7 @@ import BrushIcon from '@mui/icons-material/Brush';
 // 用 Blob Worker 绕过 Next.js webpack 对 `new Worker(new URL(...))` 的运行时注入
 // （在 classic worker 上下文注入 `_N_E` 等不存在的全局导致 ReferenceError）。
 import { loadModelBytes } from '@/lib/onnx-runtime/model-cache';
-import { ToolWorkbench } from '@/components/tools/ToolWorkbench';
+import { ToolWorkbench, SidebarTitle } from '@/components/tools/ToolWorkbench';
 
 type WorkerOutMsg =
   | { type: 'ready' }
@@ -33,6 +33,8 @@ export default function RemoveWatermark() {
   const compareCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const maskCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const workerRef = React.useRef<Worker | null>(null);
+  // worker 内模型 session 是否已就绪：就绪后再次执行无需重新加载/下载模型
+  const workerReadyRef = React.useRef(false);
   // init 阶段的 reject，用于把 Worker onerror（动态 import ORT 失败等）桥接到 init promise
   const initRejectRef = React.useRef<((e: Error) => void) | null>(null);
   const pendingInpaintRef = React.useRef<{
@@ -42,6 +44,9 @@ export default function RemoveWatermark() {
   const inpaintIdRef = React.useRef(0);
 
   const [imgSize, setImgSize] = React.useState<{ w: number; h: number } | null>(null);
+  // 原图 objectURL：仅用于撑开预览容器（隐形 img 等比撑开，canvas 覆盖其上，保证三画布与图片同比例、不错位）
+  const [sourceUrl, setSourceUrl] = React.useState<string | null>(null);
+  const sourceUrlRef = React.useRef<string | null>(null);
   const [hasMask, setHasMask] = React.useState(false);
   const [isProcessed, setIsProcessed] = React.useState(false);
   const [brushSize, setBrushSize] = React.useState(40);
@@ -103,15 +108,18 @@ export default function RemoveWatermark() {
   // ───────── 读取文件 ─────────
   const loadFile = (file: File) => {
     const url = URL.createObjectURL(file);
+    // 旧原图 URL 在换图时回收
+    if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
+    sourceUrlRef.current = url;
     const img = new Image();
     img.onload = () => {
       const w = img.naturalWidth;
       const h = img.naturalHeight;
       const MAX = 4096;
       const scale = Math.min(1, MAX / w, MAX / h);
+      setSourceUrl(url);
       setPendingImg({ img, cw: Math.round(w * scale), ch: Math.round(h * scale) });
       setImgSize({ w: Math.round(w * scale), h: Math.round(h * scale) });
-      URL.revokeObjectURL(url);
     };
     img.src = url;
   };
@@ -286,6 +294,7 @@ export default function RemoveWatermark() {
     w.onmessage = (e: MessageEvent<WorkerOutMsg>) => {
       const msg = e.data;
       if (msg.type === 'ready') {
+        workerReadyRef.current = true;
         setPhase('repairing');
         setProgress(1);
       } else if (msg.type === 'inpaint:done') {
@@ -337,7 +346,10 @@ export default function RemoveWatermark() {
       } catch {
         /* ignore */
       }
-      if (workerRef.current === w) workerRef.current = null;
+      if (workerRef.current === w) {
+        workerRef.current = null;
+        workerReadyRef.current = false;
+      }
     };
     workerRef.current = w;
     return w;
@@ -366,10 +378,18 @@ export default function RemoveWatermark() {
     return () => {
       const w = workerRef.current;
       workerRef.current = null;
+      workerReadyRef.current = false;
       if (w) {
         w.postMessage({ type: 'dispose' });
         w.terminate();
       }
+    };
+  }, []);
+
+  // 卸载时回收原图 objectURL
+  React.useEffect(() => {
+    return () => {
+      if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
     };
   }, []);
 
@@ -384,53 +404,56 @@ export default function RemoveWatermark() {
     setRunning(true);
     setError(null);
     try {
-      // 0. Worker 准备 + 模型加载（首次走网络，之后走本地缓存秒进）
+      // 0. Worker 准备 + 模型加载。首次执行才走「下载/加载模型」流程
+      //（模型有 IndexedDB 缓存，缓存命中不产生网络请求；worker 内 session 常驻），
+      // 之后直接复用已就绪的 worker，不再重复加载。
       ensureWorker();
       const w0 = workerRef.current!;
-      const ready = await new Promise<void>((resolve, reject) => {
-        const handler = (e: MessageEvent<WorkerOutMsg>) => {
-          const msg = e.data;
-          if (msg.type === 'ready') {
-            w0.removeEventListener('message', handler);
-            initRejectRef.current = null;
-            if (loadingTimerRef.current) window.clearInterval(loadingTimerRef.current);
-            loadingTimerRef.current = null;
-            setProgress(1);
-            resolve();
-          } else if (msg.type === 'error') {
-            w0.removeEventListener('message', handler);
-            initRejectRef.current = null;
-            if (loadingTimerRef.current) window.clearInterval(loadingTimerRef.current);
-            loadingTimerRef.current = null;
-            reject(new Error(msg.error));
-          }
-        };
-        w0.addEventListener('message', handler);
-        // 桥接 Worker onerror（动态 import ORT 失败等）到 init promise
-        initRejectRef.current = reject;
-        // 阶段一：下载模型（真实字节进度）
-        setPhase('downloading');
-        setProgress(0);
-        loadModelBytes((p) => setProgress(p))
-          .then((buf) => {
-            // 阶段二：加载模型（创建推理会话，无进度回调，用平滑估算进度）
-            setPhase('loading');
-            setProgress(0);
-            loadingTimerRef.current = window.setInterval(() => {
-              setProgress((p) => (p < 0.95 ? p + (0.95 - p) * 0.12 : p));
-            }, 150);
-            w0.postMessage({ type: 'init', modelBytes: buf }, [buf]);
-          })
-          .catch((err) => {
-            // 模型加载失败：清理 init 监听 + 重置状态
-            w0.removeEventListener('message', handler);
-            initRejectRef.current = null;
-            if (loadingTimerRef.current) window.clearInterval(loadingTimerRef.current);
-            loadingTimerRef.current = null;
-            reject(err instanceof Error ? err : new Error(String(err)));
-          });
-      });
-      void ready;
+      if (!workerReadyRef.current) {
+        await new Promise<void>((resolve, reject) => {
+          const handler = (e: MessageEvent<WorkerOutMsg>) => {
+            const msg = e.data;
+            if (msg.type === 'ready') {
+              w0.removeEventListener('message', handler);
+              initRejectRef.current = null;
+              if (loadingTimerRef.current) window.clearInterval(loadingTimerRef.current);
+              loadingTimerRef.current = null;
+              setProgress(1);
+              resolve();
+            } else if (msg.type === 'error') {
+              w0.removeEventListener('message', handler);
+              initRejectRef.current = null;
+              if (loadingTimerRef.current) window.clearInterval(loadingTimerRef.current);
+              loadingTimerRef.current = null;
+              reject(new Error(msg.error));
+            }
+          };
+          w0.addEventListener('message', handler);
+          // 桥接 Worker onerror（动态 import ORT 失败等）到 init promise
+          initRejectRef.current = reject;
+          // 阶段一：下载模型（真实字节进度；IndexedDB 命中时立即回调 1）
+          setPhase('downloading');
+          setProgress(0);
+          loadModelBytes((p) => setProgress(p))
+            .then((buf) => {
+              // 阶段二：加载模型（创建推理会话，无进度回调，用平滑估算进度）
+              setPhase('loading');
+              setProgress(0);
+              loadingTimerRef.current = window.setInterval(() => {
+                setProgress((p) => (p < 0.95 ? p + (0.95 - p) * 0.12 : p));
+              }, 150);
+              w0.postMessage({ type: 'init', modelBytes: buf }, [buf]);
+            })
+            .catch((err) => {
+              // 模型加载失败：清理 init 监听 + 重置状态
+              w0.removeEventListener('message', handler);
+              initRejectRef.current = null;
+              if (loadingTimerRef.current) window.clearInterval(loadingTimerRef.current);
+              loadingTimerRef.current = null;
+              reject(err instanceof Error ? err : new Error(String(err)));
+            });
+        });
+      }
 
       setPhase('repairing');
       await new Promise((r) => setTimeout(r, 20)); // 让 UI 先渲染
@@ -545,28 +568,80 @@ export default function RemoveWatermark() {
           </Typography>
         </Box>
       }
-      tips={[
-        {
-          icon: <AutoFixHighIcon sx={{ fontSize: 16 }} />,
-          text: '用画笔涂抹水印区域（红色覆盖），可拖动滑块调节笔粗，点击「AI 修复」重建。处理后可拖动分割线对比前后效果，也能继续涂抹补充修复或撤销回退。',
-        }
-      ]}
+      sidebar={
+        <Stack spacing={3}>
+          {/* 使用说明 */}
+          <Box>
+            <Typography
+              variant="overline"
+              sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 1.5 }}
+            >
+              使用说明
+            </Typography>
+            <Stack spacing={2.25}>
+              <Box
+                sx={{
+                  borderRadius: 1,
+                  border: 1,
+                  borderColor: 'divider',
+                  bgcolor: 'rgba(15,61,58,0.04)',
+                  px: 1.25,
+                  py: 1,
+                }}
+              >
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                  <Box sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0, mt: 0.25, display: 'flex' }}>
+                    <AutoFixHighIcon sx={{ fontSize: 16 }} />
+                  </Box>
+                  <Typography variant="body2" sx={{ fontSize: 12, color: 'text.secondary' }}>
+                    用画笔涂抹水印区域（红色覆盖），可拖动滑块调节笔粗，点击「AI 修复」重建。处理后可拖动分割线对比前后效果，也能继续涂抹补充修复或撤销回退。
+                  </Typography>
+                </Stack>
+              </Box>
+            </Stack>
+          </Box>
+
+          {/* 画笔设置（配置项放右栏） */}
+          <Box>
+            <SidebarTitle>画笔设置</SidebarTitle>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+              <BrushIcon sx={{ fontSize: 18, color: 'text.secondary', flexShrink: 0 }} />
+              <Slider
+                size="small"
+                min={5}
+                max={150}
+                value={brushSize}
+                onChange={(_, v) => setBrushSize(v as number)}
+                disabled={busy}
+                sx={{ flex: 1 }}
+              />
+              <Typography
+                variant="caption"
+                sx={{
+                  color: 'text.secondary',
+                  fontFamily: 'var(--font-geist-mono)',
+                  flexShrink: 0,
+                  width: 44,
+                  textAlign: 'right',
+                }}
+              >
+                {brushSize}px
+              </Typography>
+            </Stack>
+          </Box>
+        </Stack>
+      }
     >
       {!imgSize ? null : (
         <>
           {/* ───────── 左：画布预览 + 底部工具栏 ───────── */}
           <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
             <Box
-              ref={canvasWrapRef}
               sx={{
-                position: 'relative',
                 width: '100%',
-                maxWidth: imgSize.w,
-                aspectRatio: `${imgSize.w} / ${imgSize.h}`,
-                // maxHeight 限制容器高度：竖图不再无限撑高。
-                // CSS 当 maxHeight 与 aspectRatio 冲突时 maxHeight 优先，
-                // 高度被限制在480px，宽度按比例收缩，canvas 不变形。
-                maxHeight: 480,
+                // 预览容器：图片等比居中，不固定宽度
+                display: 'flex',
+                justifyContent: 'center',
                 borderRadius: 1,
                 overflow: 'hidden',
                 border: 1,
@@ -577,23 +652,29 @@ export default function RemoveWatermark() {
                 backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
               }}
             >
-              {/* 底层：当前底图（处理后为最新结果） */}
-              <canvas
-                ref={baseCanvasRef}
-                width={imgSize.w}
-                height={imgSize.h}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  display: 'block',
-                }}
-              />
-              {/* 对比层：最原始底图，仅处理后可拖动分割线露出左侧 */}
-              {isProcessed && (
+              {/* 内容区：fit-content = 图片等比显示尺寸，三画布绝对覆盖其上（与图片完全同区域，不错位不变形）。
+                  canvasWrapRef 挂在此处：分割线拖动比例基于图片区域计算，不会受外层留白影响 */}
+              <Box
+                ref={canvasWrapRef}
+                sx={{ position: 'relative', width: 'fit-content', maxWidth: '100%', maxHeight: 480 }}
+              >
+                {/* 隐形原图撑开容器，保证画布比例 = 图片比例 */}
+                <img
+                  src={sourceUrl ?? undefined}
+                  alt=""
+                  draggable={false}
+                  style={{
+                    display: 'block',
+                    maxWidth: '100%',
+                    maxHeight: 480,
+                    width: 'auto',
+                    height: 'auto',
+                    visibility: 'hidden',
+                  }}
+                />
+                {/* 底层：当前底图（处理后为最新结果） */}
                 <canvas
-                  ref={compareCanvasRef}
+                  ref={baseCanvasRef}
                   width={imgSize.w}
                   height={imgSize.h}
                   style={{
@@ -602,67 +683,82 @@ export default function RemoveWatermark() {
                     width: '100%',
                     height: '100%',
                     display: 'block',
-                    clipPath: `inset(0 ${100 - splitRatio}% 0 0)`,
                   }}
                 />
-              )}
-              {/* 涂抹层（最上） */}
-              <canvas
-                ref={maskCanvasRef}
-                width={imgSize.w}
-                height={imgSize.h}
-                onPointerDown={onPointerDown}
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
-                  display: 'block',
-                  cursor: busy ? 'default' : 'crosshair',
-                  touchAction: 'none',
-                }}
-              />
-              {/* 前后对比分割线 */}
-              {isProcessed && (
-                <Box
-                  onPointerDown={onSplitPointerDown}
-                  sx={{
+                {/* 对比层：最原始底图，仅处理后可拖动分割线露出左侧 */}
+                {isProcessed && (
+                  <canvas
+                    ref={compareCanvasRef}
+                    width={imgSize.w}
+                    height={imgSize.h}
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      width: '100%',
+                      height: '100%',
+                      display: 'block',
+                      clipPath: `inset(0 ${100 - splitRatio}% 0 0)`,
+                    }}
+                  />
+                )}
+                {/* 涂抹层（最上） */}
+                <canvas
+                  ref={maskCanvasRef}
+                  width={imgSize.w}
+                  height={imgSize.h}
+                  onPointerDown={onPointerDown}
+                  style={{
                     position: 'absolute',
-                    top: 0,
-                    bottom: 0,
-                    left: `${splitRatio}%`,
-                    zIndex: 3,
-                    transform: 'translateX(-50%)',
-                    width: 16,
-                    cursor: 'ew-resize',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                    cursor: busy ? 'default' : 'crosshair',
                     touchAction: 'none',
-                    '&::before': {
-                      content: '""',
+                  }}
+                />
+                {/* 前后对比分割线：放在内容区内，与 canvas 同区域，比例与高度都一致 */}
+                {isProcessed && (
+                  <Box
+                    onPointerDown={onSplitPointerDown}
+                    sx={{
                       position: 'absolute',
                       top: 0,
                       bottom: 0,
-                      left: '50%',
+                      left: `${splitRatio}%`,
+                      zIndex: 3,
                       transform: 'translateX(-50%)',
-                      width: 2,
-                      bgcolor: 'common.white',
-                      boxShadow: '0 0 3px rgba(0,0,0,0.6)',
-                    },
-                    '&::after': {
-                      content: '""',
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: 24,
-                      height: 24,
-                      borderRadius: '50%',
-                      bgcolor: 'common.white',
-                      boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
-                      border: '1px solid rgba(0,0,0,0.12)',
-                    },
-                  }}
-                />
-              )}
+                      width: 16,
+                      cursor: 'ew-resize',
+                      touchAction: 'none',
+                      '&::before': {
+                        content: '""',
+                        position: 'absolute',
+                        top: 0,
+                        bottom: 0,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: 2,
+                        bgcolor: 'common.white',
+                        boxShadow: '0 0 3px rgba(0,0,0,0.6)',
+                      },
+                      '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        top: '50%',
+                        left: '50%',
+                        transform: 'translate(-50%, -50%)',
+                        width: 24,
+                        height: 24,
+                        borderRadius: '50%',
+                        bgcolor: 'common.white',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
+                        border: '1px solid rgba(0,0,0,0.12)',
+                      },
+                    }}
+                  />
+                )}
+              </Box>
             </Box>
 
             {showProgress && (
@@ -684,8 +780,8 @@ export default function RemoveWatermark() {
               </Alert>
             )}
 
-            {/* 底部工具栏 */}
-            <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            {/* 底部工具栏：功能按钮单行展示（配置项统一放右栏） */}
+            <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: 'center', flexWrap: 'nowrap' }}>
               <Button
                 variant="outlined"
                 size="small"
@@ -696,19 +792,6 @@ export default function RemoveWatermark() {
                 更换图片
                 <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFile} />
               </Button>
-
-              <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
-                <BrushIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                <Slider
-                  size="small"
-                  min={5}
-                  max={150}
-                  value={brushSize}
-                  onChange={(_, v) => setBrushSize(v as number)}
-                  disabled={busy}
-                  sx={{ width: 130 }}
-                />
-              </Stack>
 
               <Tooltip title="撤销上一步">
                 <span>

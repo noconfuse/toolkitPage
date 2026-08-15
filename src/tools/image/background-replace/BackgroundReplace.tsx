@@ -329,8 +329,8 @@ export default function BackgroundReplace() {
 
       <Stack
         direction="row"
-        spacing={1.5}
-        sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}
+        spacing={1}
+        sx={{ mt: 2, alignItems: 'center', flexWrap: 'nowrap' }}
       >
         <Button
           variant="outlined"

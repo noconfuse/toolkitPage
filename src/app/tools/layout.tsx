@@ -160,7 +160,11 @@ export default function ToolsLayout({ children }: { children: React.ReactNode })
   );
 
   return (
-    <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
+    // AppShell 已对 /tools 路由取消主内容 padding，此处直接铺满：
+    // 侧边栏贴左顶到上下两边，右侧内容区自己加内边距。
+    // 不用 gap：主内容区已有左右 padding，再加 gap 会让间隔过大。
+    // minHeight 撑满视口剩余高度（56 = 导航栏高），侧边栏 stretch 后边框线延伸到页面底部。
+    <Box sx={{ display: 'flex', alignItems: 'stretch', minHeight: 'calc(100vh - 56px)' }}>
       {/* 移动端：汉堡按钮 */}
       <IconButton
         onClick={() => setMobileOpen(true)}
@@ -192,27 +196,23 @@ export default function ToolsLayout({ children }: { children: React.ReactNode })
         {sidebarContent}
       </Drawer>
 
-      {/* 桌面端侧边栏 */}
+      {/* 桌面端侧边栏：stretch 拉满容器高度，边框线从导航栏底延伸到页面底部 */}
       <Box
         sx={{
           display: { xs: 'none', lg: 'block' },
           width: SIDEBAR_W,
           flexShrink: 0,
-          position: 'sticky',
-          top: 72, // 56(header) + 16(gap)
-          maxHeight: 'calc(100vh - 88px)',
-          overflowY: 'auto',
           borderRight: 1,
           borderColor: 'divider',
-          '&::-webkit-scrollbar': { width: 4 },
-          '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 2 },
         }}
       >
         {sidebarContent}
       </Box>
 
-      {/* 主内容 */}
-      <Box sx={{ flex: 1, minWidth: 0 }}>{children}</Box>
+      {/* 主内容区：自身加内边距 */}
+      <Box sx={{ flex: 1, minWidth: 0, px: { xs: 2, sm: 3, md: 4, lg: 5 }, pt: { xs: 3, md: 5 }, pb: { xs: 6, md: 10 } }}>
+        {children}
+      </Box>
     </Box>
   );
 }
