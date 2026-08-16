@@ -32,7 +32,6 @@ import FlowPill from '@/components/tools/FlowPill';
 import {
   useFlowInput,
   makeFlowImage,
-  blobToFlowImage,
   flowImagesToFiles,
   type FlowImage,
 } from '@/lib/flow';
@@ -74,7 +73,7 @@ export default function RemoveWatermark({
   // 前后对比分割线位置（0-100，仅处理后生效）
   const [splitRatio, setSplitRatio] = React.useState(50);
 
-  // 工作流串流出参：下载时把 canvas 结果写入 blob（同时记录宽高），供「继续处理」胶囊使用
+  // 工作流串流出参：处理完成/下载时把 canvas 结果写入 blob（同时记录宽高），供「继续处理」胶囊使用
   const [resultBlob, setResultBlob] = React.useState<Blob | null>(null);
   const [resultSize, setResultSize] = React.useState<{ w: number; h: number } | null>(null);
   // 资源信息：源文件名与大小（结果大小直接取 resultBlob）
@@ -129,6 +128,8 @@ export default function RemoveWatermark({
     setSplitRatio(50);
     setError(null);
     clearMask();
+    setResultBlob(null);
+    setResultSize(null);
     setPendingImg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingImg]);
@@ -505,6 +506,13 @@ export default function RemoveWatermark({
       currentDataRef.current = bctx.getImageData(0, 0, w, h);
       setIsProcessed(true);
 
+      // 处理完成即写入工作流串流出参，胶囊无需等下载才出现
+      bc.toBlob((b) => {
+        if (!b) return;
+        setResultBlob(b);
+        setResultSize({ w, h });
+      }, 'image/png');
+
       // 清空涂抹，等待继续修复
       mctx.clearRect(0, 0, w, h);
       maskHistoryRef.current = [];
@@ -541,25 +549,14 @@ export default function RemoveWatermark({
   };
 
   // ───────── 工作流串流出参（「继续处理」胶囊） ─────────
-  // 正常下载已记录宽高，走 makeFlowImage 同步构造；宽高不易取得时退回 blobToFlowImage 异步解码
-  const [fallbackFlowImages, setFallbackFlowImages] = React.useState<FlowImage[]>([]);
-  React.useEffect(() => {
-    if (!resultBlob || resultSize) return;
-    let alive = true;
-    blobToFlowImage(resultBlob, `去水印-${Date.now()}.png`)
-      .then((im) => alive && setFallbackFlowImages([im]))
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [resultBlob, resultSize]);
-
-  const flowImages: FlowImage[] = React.useMemo(() => {
-    if (resultBlob && resultSize) {
-      return [makeFlowImage(resultBlob, `去水印-${Date.now()}.png`, resultSize.w, resultSize.h)];
-    }
-    return fallbackFlowImages;
-  }, [resultBlob, resultSize, fallbackFlowImages]);
+  // resultBlob/resultSize 在处理完成与下载时成对写入，宽高始终已知，直接同步构造
+  const flowImages: FlowImage[] = React.useMemo(
+    () =>
+      resultBlob && resultSize
+        ? [makeFlowImage(resultBlob, `去水印-${Date.now()}.png`, resultSize.w, resultSize.h)]
+        : [],
+    [resultBlob, resultSize],
+  );
 
   const showProgress = phase !== 'idle';
   const statusText =

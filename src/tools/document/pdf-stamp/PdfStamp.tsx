@@ -22,6 +22,8 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DrawIcon from '@mui/icons-material/Draw';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { SelectedOverlay } from '@/components/tools/SelectedOverlay';
 import {
   ToolWorkbench,
@@ -99,7 +101,6 @@ export default function PdfStamp({
   const [layers, setLayers] = React.useState<StampLayer[]>([]);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [dragState, setDragState] = React.useState<DragState>({ kind: 'none' });
-  const [scale, setScale] = React.useState(1); // 屏幕 px / 页面 px
   const [exporting, setExporting] = React.useState(false);
   const [signatureMode, setSignatureMode] = React.useState(false);
   const [, setError] = React.useState<string | null>(null);
@@ -112,19 +113,21 @@ export default function PdfStamp({
   const selectedLayer = layers.find((l) => l.id === selectedId) ?? null;
 
   // ───────── 渲染 PDF 页面到 base canvas（每页一次，切页时取消上一次渲染） ─────────
+  // 先渲染到离屏 canvas，完成后一次性替换到可见 canvas：切页时旧页保持显示，
+  // 避免 canvas.width 赋值清空位图导致画面闪空白。
   React.useEffect(() => {
     if (!doc) return;
     let cancelled = false;
     const run = async () => {
       const page = await doc.getPage(pageNumber);
       const viewport = page.getViewport({ scale: PAGE_RENDER_SCALE });
-      const canvas = baseCanvasRef.current;
-      if (!canvas || cancelled) return;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      if (cancelled) return;
+      const off = document.createElement('canvas');
+      off.width = viewport.width;
+      off.height = viewport.height;
       renderTaskRef.current?.cancel();
       // pdfjs-dist 5.x：render 需要直接传 canvas（内部取 2d context）
-      const task = page.render({ canvas, viewport });
+      const task = page.render({ canvas: off, viewport });
       renderTaskRef.current = task;
       try {
         await task.promise;
@@ -132,6 +135,12 @@ export default function PdfStamp({
         return; // 被取消（快速切页）
       }
       if (cancelled) return;
+      const canvas = baseCanvasRef.current;
+      if (!canvas) return;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(off, 0, 0);
       setPageSize({ width: page.view[2], height: page.view[3] });
       setVpSize({ w: viewport.width, h: viewport.height });
     };
@@ -162,19 +171,32 @@ export default function PdfStamp({
     }
   }, [layers, vpSize]);
 
-  // ───────── 暴露 scale（只用于命中半径换算） ─────────
+  // ───────── 页面显示尺寸：按纸张比例缩放，保证整页可见 ─────────
+  // 规则：scale = min(1, 可用宽度/页宽, 70vh/页高)，容器宽高 = 页宽高 × scale。
+  // 宽度不必占满；页面偏高时整体缩小而非裁掉底部，容器始终能装下完整一页。
+  const previewWrapRef = React.useRef<HTMLDivElement | null>(null);
+  const [dispSize, setDispSize] = React.useState<{ w: number; h: number } | null>(null);
   React.useLayoutEffect(() => {
-    const el = surfaceRef.current;
+    if (!vpSize) {
+      setDispSize(null);
+      return;
+    }
+    const el = previewWrapRef.current;
     if (!el) return;
     const update = () => {
       const rect = el.getBoundingClientRect();
-      setScale(vpSize ? rect.width / vpSize.w : 1);
+      const availH = window.innerHeight * 0.7; // 对应 70vh
+      const scale = Math.min(1, rect.width / vpSize.w, availH / vpSize.h);
+      setDispSize({ w: vpSize.w * scale, h: vpSize.h * scale });
     };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, [vpSize]);
+
+  // 命中半径换算：屏幕 px / 页面 px
+  const scale = vpSize && dispSize ? dispSize.w / vpSize.w : 1;
 
   // ───────── 销毁 pdf 文档 ─────────
   React.useEffect(() => {
@@ -488,6 +510,15 @@ export default function PdfStamp({
     setSelectedId(null);
   };
 
+  // 翻页：切换后重置画布与选中态（每页图层相互独立）；不置空 vpSize，
+  // 旧页画面保持到新页渲染完成，避免容器尺寸跳动导致闪屏
+  const goToPage = (n: number) => {
+    if (n < 1 || n > pageCount) return;
+    setPageNumber(n);
+    setLayers([]);
+    setSelectedId(null);
+  };
+
   const handleExport = async () => {
     if (!pdfFile || layers.length === 0 || !pageSize) {
       setError('请先上传 PDF 并添加至少一张图片');
@@ -693,9 +724,11 @@ export default function PdfStamp({
       }
       emptyState={<EmptyPdf onSelect={handlePdfChange} />}
     >
-      {/* 画布预览列：maxHeight 限制，防止长 PDF 把页面撑高；内部居中显示 */}
+      {/* 画布预览列：容器按纸张比例缩放显示整页（宽度不占满），页面偏高时整体缩小 */}
       <Box
+        ref={previewWrapRef}
         sx={{
+          position: 'relative',
           display: 'flex',
           justifyContent: 'center',
           maxHeight: '70vh',
@@ -714,9 +747,9 @@ export default function PdfStamp({
             onMouseDown={onSurfaceMouseDown}
             sx={{
               position: 'relative',
-              width: 'fit-content',
+              width: dispSize ? dispSize.w : 'fit-content',
+              height: dispSize ? dispSize.h : 'auto',
               maxWidth: '100%',
-              maxHeight: '70vh',
               borderRadius: 1,
               overflow: 'hidden',
               border: 1,
@@ -729,11 +762,14 @@ export default function PdfStamp({
                   : dragState.kind !== 'none'
                     ? 'grabbing'
                     : 'grab',
+              // 翻页控件：默认隐藏，hover 页面容器时淡入
+              '& .pdf-nav': { opacity: 0, transition: 'opacity 160ms ease', pointerEvents: 'none' },
+              '&:hover .pdf-nav': { opacity: 1, pointerEvents: 'auto' },
             }}
           >
             <canvas
               ref={baseCanvasRef}
-              style={{ display: 'block', width: '100%', height: 'auto' }}
+              style={{ display: 'block', width: '100%', height: '100%' }}
             />
             <canvas
               ref={layerCanvasRef}
@@ -764,6 +800,57 @@ export default function PdfStamp({
                 onCornerDown={tryStartDrag}
                 onRotateDown={tryStartDrag}
               />
+            )}
+
+            {/* 翻页控件：悬浮于页面容器底部中央，hover 容器时显示 */}
+            {pdfFile && pageCount > 1 && (
+              <Box
+                className="pdf-nav"
+                onMouseDown={(e) => e.stopPropagation()}
+                sx={{
+                  position: 'absolute',
+                  bottom: 8,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  zIndex: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  px: 1.25,
+                  py: 0.4,
+                  borderRadius: 2,
+                  bgcolor: 'rgba(255,255,255,0.92)',
+                  border: 1,
+                  borderColor: 'divider',
+                  boxShadow: 1,
+                  backdropFilter: 'blur(4px)',
+                }}
+              >
+                <IconButton
+                  size="small"
+                  aria-label="上一页"
+                  onClick={() => goToPage(pageNumber - 1)}
+                  disabled={pageNumber <= 1}
+                  sx={{ p: 0.5 }}
+                >
+                  <ChevronLeftIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+                <Typography
+                  variant="caption"
+                  sx={{ fontFamily: 'var(--font-geist-mono)', color: 'text.secondary', px: 0.5 }}
+                >
+                  {pageNumber} / {pageCount}
+                </Typography>
+                <IconButton
+                  size="small"
+                  aria-label="下一页"
+                  onClick={() => goToPage(pageNumber + 1)}
+                  disabled={pageNumber >= pageCount}
+                  sx={{ p: 0.5 }}
+                >
+                  <ChevronRightIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Box>
             )}
           </Box>
         </Box>
@@ -808,34 +895,6 @@ export default function PdfStamp({
               </Button>
             </span>
           </Tooltip>
-
-          {pdfFile && pageCount > 1 && (
-            <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
-                <Box
-                  key={n}
-                  onClick={() => {
-                    setPageNumber(n);
-                    setLayers([]);
-                    setSelectedId(null);
-                    setVpSize(null);
-                  }}
-                  sx={{
-                    px: 1.25, py: 0.4, fontSize: 12, fontWeight: 500,
-                    borderRadius: 0.75, border: 1,
-                    borderColor: n === pageNumber ? 'primary.main' : 'divider',
-                    bgcolor: n === pageNumber ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
-                    color: n === pageNumber ? 'primary.main' : 'text.primary',
-                    cursor: 'pointer',
-                    transition: 'all 160ms ease',
-                    '&:hover': { borderColor: n === pageNumber ? 'primary.main' : 'text.secondary' },
-                  }}
-                >
-                  {n}
-                </Box>
-              ))}
-            </Stack>
-          )}
 
           <Tooltip title="清空所有图层" placement="top">
             <span>

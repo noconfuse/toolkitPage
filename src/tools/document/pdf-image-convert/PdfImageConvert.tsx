@@ -14,6 +14,7 @@ import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import ToggleButton from '@mui/material/ToggleButton';
+import JSZip from 'jszip';
 import MenuItem from '@mui/material/MenuItem';
 import TextField from '@mui/material/TextField';
 import Slider from '@mui/material/Slider';
@@ -399,15 +400,30 @@ export default function PdfImageConvert({
         setProgress((i + 1) / pages.length);
       }
       setOutputs(results);
-      // 单页：自动下载；多页：等用户点单个下载
+      // 单页直接下载；多页打包 ZIP 自动下载，无需再手动点「全部下载」
+      const ext = format === 'png' ? 'png' : 'jpg';
+      const baseName = pdfFile.name.replace(/\.pdf$/i, '') || 'pdf';
       if (results.length === 1) {
         const a = document.createElement('a');
         a.href = results[0].url;
-        const ext = format === 'png' ? 'png' : 'jpg';
-        a.download = `${pdfFile.name.replace(/\.pdf$/i, '')}-page${results[0].pageNumber}.${ext}`;
+        a.download = `${baseName}-page${results[0].pageNumber}.${ext}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+      } else {
+        const zip = new JSZip();
+        for (const r of results) {
+          zip.file(`${baseName}-page${r.pageNumber}.${ext}`, r.blob);
+        }
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${baseName}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : '导出失败');
@@ -424,11 +440,6 @@ export default function PdfImageConvert({
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-  };
-
-  const downloadAll = () => {
-    // 逐个触发下载（浏览器允许）
-    outputs.forEach((it) => downloadOne(it));
   };
 
   const handleClear = () => {
@@ -629,7 +640,7 @@ export default function PdfImageConvert({
                 disabled={!doc || working}
                 startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
               >
-                {working ? '导出中…' : outputs.length === 1 ? '导出图片（自动下载）' : '导出图片'}
+                {working ? '导出中…' : '导出图片（自动下载）'}
               </Button>
             </Box>
           )}
@@ -708,114 +719,128 @@ export default function PdfImageConvert({
     >
       {dir === 'i2p' ? (
         <Box>
-          {/* PDF 风格竖向预览：每页一个白底卡片，按 pageSize 计算比例，contain 显示图片 */}
-          <Stack spacing={2}>
-            {items.map((it, i) => (
-              <Box
-                key={it.id}
-                sx={{
-                  position: 'relative',
-                  bgcolor: '#ffffff',
-                  borderRadius: 1,
-                  boxShadow: '0 1px 4px rgba(15,31,29,0.12), 0 0 0 1px rgba(15,31,29,0.06)',
-                  overflow: 'hidden',
-                  width: '100%',
-                  aspectRatio: `${previewRatio()} / 1`,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                {/* 页码 */}
+          {/* 预览列：与 PDF → 图片 一致的网格缩略图布局，避免整页大图撑满 */}
+          <Box
+            sx={{
+              maxHeight: '70vh',
+              overflowY: 'auto',
+              borderRadius: 1,
+              border: 1,
+              borderColor: 'divider',
+              bgcolor: '#fafaf7',
+              backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
+              backgroundSize: '20px 20px',
+              backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+              p: 2,
+              '&::-webkit-scrollbar': { width: 6 },
+              '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 3 },
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                gap: 1.5,
+              }}
+            >
+              {items.map((it, i) => (
                 <Box
+                  key={it.id}
                   sx={{
-                    position: 'absolute',
-                    top: 8,
-                    left: 8,
-                    px: 0.75,
-                    py: 0.25,
-                    fontSize: 10,
-                    fontFamily: 'var(--font-geist-mono)',
-                    bgcolor: 'rgba(15,31,29,0.06)',
-                    color: 'text.secondary',
-                    borderRadius: 0.5,
-                  }}
-                >
-                  第 {String(i + 1).padStart(2, '0')} 页
-                </Box>
-
-                {/* 操作按钮（右上角） */}
-                <Stack
-                  direction="row"
-                  sx={{
-                    position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    bgcolor: 'rgba(255,255,255,0.95)',
-                    borderRadius: 0.75,
+                    position: 'relative',
                     border: 1,
                     borderColor: 'divider',
+                    borderRadius: 1,
+                    overflow: 'hidden',
+                    bgcolor: '#ffffff',
+                    aspectRatio: `${previewRatio()} / 1`,
                   }}
                 >
-                  <Tooltip title="上移（页面顺序向前）" placement="bottom">
-                    <span>
-                      <IconButton
-                        size="small"
-                        onClick={() => move(it.id, 'up')}
-                        disabled={i === 0}
-                        sx={{ p: 0.25 }}
-                      >
-                        <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title="下移（页面顺序向后）" placement="bottom">
-                    <span>
-                      <IconButton
-                        size="small"
-                        onClick={() => move(it.id, 'down')}
-                        disabled={i === items.length - 1}
-                        sx={{ p: 0.25 }}
-                      >
-                        <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
-                  <Tooltip title="移除此页" placement="bottom">
-                    <IconButton
-                      size="small"
-                      onClick={() => removeAt(it.id)}
-                      sx={{ p: 0.25, color: 'text.secondary' }}
-                    >
-                      <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Tooltip>
-                </Stack>
-
-                {/* 图片：contain 在 (页面 - 边距) 区域 */}
-                <Box
-                  sx={{
-                    width: `calc(100% - ${(marginMm / Math.max(previewMmW(), previewMmH())) * 100}%)`,
-                    height: `calc(100% - ${(marginMm / Math.max(previewMmW(), previewMmH())) * 100}%)`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <img
-                    src={it.dataUrl}
-                    alt={it.name}
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: '100%',
-                      display: 'block',
-                      objectFit: 'contain',
+                  {/* 图片：contain 在 (页面 - 边距) 区域 */}
+                  <Box
+                    sx={{
+                      width: `calc(100% - ${(marginMm / Math.max(previewMmW(), previewMmH())) * 100}%)`,
+                      height: `calc(100% - ${(marginMm / Math.max(previewMmW(), previewMmH())) * 100}%)`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
-                  />
+                  >
+                    <img
+                      src={it.dataUrl}
+                      alt={it.name}
+                      style={{ maxWidth: '100%', maxHeight: '100%', display: 'block', objectFit: 'contain' }}
+                    />
+                  </Box>
+
+                  {/* 页码 */}
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      top: 4,
+                      left: 4,
+                      px: 0.75,
+                      py: 0.25,
+                      fontSize: 10,
+                      fontFamily: 'var(--font-geist-mono)',
+                      bgcolor: 'rgba(255,255,255,0.85)',
+                      borderRadius: 0.5,
+                    }}
+                  >
+                    第 {i + 1} 页
+                  </Box>
+
+                  {/* 操作按钮（右下角） */}
+                  <Stack
+                    direction="row"
+                    sx={{
+                      position: 'absolute',
+                      bottom: 4,
+                      right: 4,
+                      bgcolor: 'rgba(255,255,255,0.95)',
+                      borderRadius: 0.75,
+                      border: 1,
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <Tooltip title="上移（页面顺序向前）" placement="bottom">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => move(it.id, 'up')}
+                          disabled={i === 0}
+                          sx={{ p: 0.25 }}
+                        >
+                          <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="下移（页面顺序向后）" placement="bottom">
+                      <span>
+                        <IconButton
+                          size="small"
+                          onClick={() => move(it.id, 'down')}
+                          disabled={i === items.length - 1}
+                          sx={{ p: 0.25 }}
+                        >
+                          <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="移除此页" placement="bottom">
+                      <IconButton
+                        size="small"
+                        onClick={() => removeAt(it.id)}
+                        sx={{ p: 0.25, color: 'text.secondary' }}
+                      >
+                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
                 </Box>
-              </Box>
-            ))}
-          </Stack>
+              ))}
+            </Box>
+          </Box>
 
           <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
             <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
@@ -835,23 +860,6 @@ export default function PdfImageConvert({
         </Box>
       ) : (
         <Box>
-          <Stack direction="row" spacing={1.5} sx={{ mb: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-              换 PDF
-              <input type="file" accept="application/pdf" hidden onChange={handlePdf} />
-            </Button>
-            <Tooltip title="清空">
-              <IconButton size="small" color="inherit" onClick={handleClear} sx={{ color: 'text.secondary' }}>
-                <RestartAltIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-            <Box sx={{ flex: 1 }} />
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
-              {pdfFile?.name} · {pageCount} 页
-              {outputs.length > 0 && ` · 已导出 ${outputs.length} 张`}
-            </Typography>
-          </Stack>
-
           {/* 预览列：最大高度 70vh，内部按需滚动 */}
           <Box
             sx={{
@@ -976,18 +984,22 @@ export default function PdfImageConvert({
             )}
           </Box>
 
-          {outputs.length > 0 && (
-            <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-              <Button
-                variant="contained"
-                size="small"
-                onClick={downloadAll}
-                startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-              >
-                全部下载（{outputs.length} 张）
-              </Button>
-            </Stack>
-          )}
+          <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+              换 PDF
+              <input type="file" accept="application/pdf" hidden onChange={handlePdf} />
+            </Button>
+            <Tooltip title="清空">
+              <IconButton size="small" color="inherit" onClick={handleClear} sx={{ color: 'text.secondary' }}>
+                <RestartAltIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+            <Box sx={{ flex: 1 }} />
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
+              {pdfFile?.name} · {pageCount} 页
+              {outputs.length > 0 && ` · 已导出 ${outputs.length} 张`}
+            </Typography>
+          </Stack>
 
           {working && (
             <Box sx={{ mt: 2 }}>
