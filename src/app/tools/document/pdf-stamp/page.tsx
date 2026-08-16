@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import dynamic from 'next/dynamic';
 import Box from '@mui/material/Box';
 import { SITE_URL } from '@/lib/site-config';
-import { breadcrumbJsonLd } from '@/lib/json-ld';
+import { breadcrumbJsonLd, faqJsonLd } from '@/lib/json-ld';
 import { CATEGORIES, getToolByHref } from '@/lib/tools-registry';
 
 // react-pdf 依赖 pdfjs-dist，必须完全跳过 SSR
@@ -57,6 +57,12 @@ export default function Page() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }}
       />
+      {TOOL.faq && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd(TOOL.faq)) }}
+        />
+      )}
     </Box>
   );
 }
