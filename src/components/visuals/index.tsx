@@ -120,6 +120,22 @@ export function ThumbPdfImageConvert(props: SvgProps) {
   );
 }
 
+export function ThumbImageCrop(props: SvgProps) {
+  return (
+    <svg {...baseSvgProps} {...strokeProps} {...props}>
+      {/* 原图框 + 内容 */}
+      <rect x="14" y="18" width="72" height="64" rx="3" />
+      <path d="M24 36 L38 50 L30 60 L48 70" opacity="0.3" />
+      {/* 裁剪框（虚线）+ 四角手柄 */}
+      <rect x="30" y="30" width="40" height="38" strokeDasharray="3 2" />
+      <path
+        d="M30 24 L30 30 L36 30 M70 24 L70 30 L64 30 M30 74 L30 68 L36 68 M70 74 L70 68 L64 68"
+        opacity="0.8"
+      />
+    </svg>
+  );
+}
+
 export function ThumbImageCompress(props: SvgProps) {
   return (
     <svg {...baseSvgProps} {...strokeProps} {...props}>

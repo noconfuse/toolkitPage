@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 import dynamic from 'next/dynamic';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import { SITE_URL } from '@/lib/site-config';
 import { breadcrumbJsonLd } from '@/lib/json-ld';
 import { CATEGORIES, getToolByHref } from '@/lib/tools-registry';
@@ -46,25 +45,8 @@ export default function Page() {
   ]);
 
   return (
-    <Box>
-      <Typography
-        variant="h2"
-        sx={{
-          fontSize: { xs: 24, md: 32 },
-          fontWeight: 500,
-          letterSpacing: '-0.02em',
-          lineHeight: 1.1,
-          mb: 1,
-        }}
-      >
-        {TITLE}
-      </Typography>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-        {TOOL.description}
-      </Typography>
-
-      <ImageConvert />
+    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+      <ImageConvert title={TITLE} description={TOOL.description} />
 
       <script
         type="application/ld+json"

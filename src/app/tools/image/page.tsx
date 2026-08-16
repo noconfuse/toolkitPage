@@ -31,7 +31,7 @@ export default function Page() {
     { name: CATEGORY.label, href: CATEGORY.href },
   ]);
   return (
-    <Box>
+    <Box sx={{ px: { xs: 2, sm: 3, md: 4, lg: 5 } }}>
       <Box sx={{ pt: { xs: 2, md: 4 }, pb: { xs: 4, md: 6 } }}>
         <Stack direction="row" spacing={1.5} sx={{ mb: 3, alignItems: "baseline" }}>
           <Typography

@@ -23,6 +23,13 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DrawIcon from '@mui/icons-material/Draw';
 import { SelectedOverlay } from '@/components/tools/SelectedOverlay';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  ShortcutList,
+  SidebarResourceInfo,
+} from '@/components/tools/ToolWorkbench';
 import { SignaturePad } from './SignaturePad';
 import {
   clampInside,
@@ -75,7 +82,13 @@ type DragState =
       center: Point;
     };
 
-export default function PdfStamp() {
+export default function PdfStamp({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [pdfFile, setPdfFile] = React.useState<File | null>(null);
   const [doc, setDoc] = React.useState<PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = React.useState(1);
@@ -184,9 +197,7 @@ export default function PdfStamp() {
     [vpSize],
   );
 
-  const handlePdfChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+  const loadPdf = async (file: File) => {
     if (file.type !== 'application/pdf') {
       setError('请选择 PDF 文件');
       return;
@@ -202,6 +213,17 @@ export default function PdfStamp() {
     setVpSize(null);
     setPageSize(null);
     setPdfFile(file);
+  };
+
+  const handlePdfChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) void loadPdf(file);
+  };
+
+  // ToolWorkbench 外壳统一拖拽上传：只取第一个 PDF
+  const onToolDrop = (files: FileList | null) => {
+    const file = files?.[0];
+    if (file) void loadPdf(file);
   };
 
   const readImage = (file: File) =>
@@ -516,37 +538,179 @@ export default function PdfStamp() {
   };
 
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: { xs: 'column', lg: 'row' },
-        gap: 2,
-        alignItems: 'flex-start',
-      }}
-    >
-      {/* 画布 + 按钮行 */}
-      <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-        {!pdfFile ? (
-          <EmptyPdf onSelect={handlePdfChange} />
-        ) : (
-          // 预览列容器：maxHeight 限制，防止长 PDF 把页面撑高；内部居中显示
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'center',
-              maxHeight: '70vh',
-              overflow: 'auto',
-              bgcolor: '#fafaf7',
-              backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
-              borderRadius: 1,
-              border: 1,
-              borderColor: 'divider',
+    <ToolWorkbench
+      title={title}
+      description={description}
+      hasContent={!!pdfFile}
+      onDrop={onToolDrop}
+      usage={
+        <>
+          <TipCard
+            icon={<DrawIcon />}
+            text="给 PDF 叠加图片水印或手写签名：选中图层后拖动调整位置，角点缩放、上方手柄旋转，右栏可调透明度并导出。"
+          />
+          <Box sx={{ mt: 2.5 }}>
+            <ShortcutList
+              items={[
+                { k: '↑↓←→', d: '微调位置' },
+                { k: 'Shift + 方向键', d: '大步移动' },
+                { k: 'Delete', d: '删除选中层' },
+                { k: 'Esc', d: '取消选中' },
+              ]}
+            />
+          </Box>
+        </>
+      }
+      config={
+        <>
+          <SidebarTitle>图层 · {layers.length}</SidebarTitle>
+          {layers.length === 0 ? (
+            <Typography variant="body2" color="text.disabled" sx={{ py: 1, fontSize: 13 }}>
+              还没有叠加层，先在画布上添加图片或手写签名
+            </Typography>
+          ) : (
+            <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+              {layers.map((layer, i) => {
+                const selected = layer.id === selectedId;
+                return (
+                  <Box
+                    key={layer.id}
+                    onClick={() => setSelectedId(layer.id)}
+                    sx={{
+                      py: 1.25, px: 1, borderRadius: 1,
+                      cursor: 'pointer',
+                      transition: 'background-color 160ms ease',
+                      bgcolor: selected ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
+                      border: 1,
+                      borderColor: selected ? 'primary.main' : 'transparent',
+                      display: 'flex', alignItems: 'center', gap: 1,
+                    }}
+                  >
+                    <Box sx={{ width: 20, flexShrink: 0, fontFamily: 'var(--font-geist-mono)', fontSize: 11, color: 'text.secondary', textAlign: 'right' }}>
+                      {String(i + 1).padStart(2, '0')}
+                    </Box>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="body2" sx={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {layer.name}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10 }}>
+                        {Math.round(layer.opacity * 100)}% · {Math.round((layer.rotation * 180) / Math.PI)}°
+                      </Typography>
+                    </Box>
+                    <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
+                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, 'up'); }} disabled={i === layers.length - 1} sx={{ p: 0.25 }}>
+                        <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, 'down'); }} disabled={i === 0} sx={{ p: 0.25 }}>
+                        <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} sx={{ p: 0.25, color: 'text.secondary' }}>
+                        <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                      </IconButton>
+                    </Stack>
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
+
+          {selectedLayer && vpSize && (
+            <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
+              <SidebarTitle>选中层</SidebarTitle>
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                  不透明度 · {Math.round(selectedLayer.opacity * 100)}%
+                </Typography>
+                <Slider
+                  size="small"
+                  value={selectedLayer.opacity}
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  onChange={(_, v) => updateLayer(selectedLayer.id, { opacity: v as number })}
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                  旋转 · {Math.round((selectedLayer.rotation * 180) / Math.PI)}°
+                </Typography>
+                <Slider
+                  size="small"
+                  value={Math.round((selectedLayer.rotation * 180) / Math.PI)}
+                  min={-180}
+                  max={180}
+                  step={1}
+                  onChange={(_, v) => {
+                    const rad = ((v as number) * Math.PI) / 180;
+                    const fixed = clampInside(
+                      selectedLayer.cx,
+                      selectedLayer.cy,
+                      selectedLayer.w,
+                      selectedLayer.h,
+                      rad,
+                      vpSize,
+                    );
+                    setLayers((prev) =>
+                      prev.map((l) =>
+                        l.id === selectedLayer.id ? { ...l, rotation: rad, cx: fixed.cx, cy: fixed.cy } : l,
+                      ),
+                    );
+                  }}
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
+            </Box>
+          )}
+
+          {pdfFile && (
+            <Box sx={{ mt: 3, pt: 3, borderTop: 1, borderColor: 'divider' }}>
+              <Button
+                variant="contained"
+                size="small"
+                fullWidth
+                onClick={handleExport}
+                disabled={layers.length === 0 || exporting}
+                startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+              >
+                {exporting ? '导出中…' : '导出 PDF'}
+              </Button>
+              {exporting && <LinearProgress sx={{ mt: 1.5 }} />}
+            </Box>
+          )}
+        </>
+      }
+      resource={
+        pdfFile ? (
+          <SidebarResourceInfo
+            data={{
+              name: pdfFile.name,
+              before: { size: pdfFile.size },
+              extra: [{ label: '页数', value: `${pageCount}` }],
             }}
-          >
-          <Box
-            ref={surfaceRef}
+          />
+        ) : undefined
+      }
+      emptyState={<EmptyPdf onSelect={handlePdfChange} />}
+    >
+      {/* 画布预览列：maxHeight 限制，防止长 PDF 把页面撑高；内部居中显示 */}
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'center',
+          maxHeight: '70vh',
+          overflow: 'auto',
+          bgcolor: '#fafaf7',
+          backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
+          backgroundSize: '20px 20px',
+          backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+          borderRadius: 1,
+          border: 1,
+          borderColor: 'divider',
+        }}
+      >
+        <Box
+          ref={surfaceRef}
             onMouseDown={onSurfaceMouseDown}
             sx={{
               position: 'relative',
@@ -602,8 +766,7 @@ export default function PdfStamp() {
               />
             )}
           </Box>
-          </Box>
-        )}
+        </Box>
 
         {/* 按钮行 */}
         <Stack
@@ -706,7 +869,6 @@ export default function PdfStamp() {
             </Typography>
           )}
         </Stack>
-      </Box>
 
       {/* 签名弹窗 */}
       <Dialog
@@ -724,154 +886,7 @@ export default function PdfStamp() {
         </DialogContent>
       </Dialog>
 
-      {/* 右栏 */}
-      <Box sx={{ width: { xs: '100%', lg: 280 }, flexShrink: 0 }}>
-        <Typography variant="overline" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 1.5 }}>
-          图层 · {layers.length}
-        </Typography>
-
-        {layers.length === 0 ? (
-          <Typography variant="body2" color="text.disabled" sx={{ py: 2, fontSize: 13 }}>
-            还没有叠加层
-          </Typography>
-        ) : (
-          <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
-            {layers.map((layer, i) => {
-              const selected = layer.id === selectedId;
-              return (
-                <Box
-                  key={layer.id}
-                  onClick={() => setSelectedId(layer.id)}
-                  sx={{
-                    py: 1.25, px: 1, borderRadius: 1,
-                    cursor: 'pointer',
-                    transition: 'background-color 160ms ease',
-                    bgcolor: selected ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
-                    border: 1,
-                    borderColor: selected ? 'primary.main' : 'transparent',
-                    display: 'flex', alignItems: 'center', gap: 1,
-                  }}
-                >
-                  <Box sx={{ width: 20, flexShrink: 0, fontFamily: 'var(--font-geist-mono)', fontSize: 11, color: 'text.secondary', textAlign: 'right' }}>
-                    {String(i + 1).padStart(2, '0')}
-                  </Box>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography variant="body2" sx={{ fontWeight: 500, fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {layer.name}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10 }}>
-                      {Math.round(layer.opacity * 100)}% · {Math.round((layer.rotation * 180) / Math.PI)}°
-                    </Typography>
-                  </Box>
-                  <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
-                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, 'up'); }} disabled={i === layers.length - 1} sx={{ p: 0.25 }}>
-                      <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); moveLayer(layer.id, 'down'); }} disabled={i === 0} sx={{ p: 0.25 }}>
-                      <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                    <IconButton size="small" onClick={(e) => { e.stopPropagation(); deleteLayer(layer.id); }} sx={{ p: 0.25, color: 'text.secondary' }}>
-                      <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Stack>
-                </Box>
-              );
-            })}
-          </Stack>
-        )}
-
-        {/* 选中层属性 */}
-        {selectedLayer && vpSize && (
-          <Box sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: 'divider' }}>
-            <Typography variant="overline" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 2 }}>
-              选中层
-            </Typography>
-
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                不透明度 · {Math.round(selectedLayer.opacity * 100)}%
-              </Typography>
-              <Slider
-                size="small"
-                value={selectedLayer.opacity}
-                min={0.1}
-                max={1}
-                step={0.05}
-                onChange={(_, v) => updateLayer(selectedLayer.id, { opacity: v as number })}
-                sx={{ mt: 0.5 }}
-              />
-            </Box>
-
-            <Box>
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                旋转 · {Math.round((selectedLayer.rotation * 180) / Math.PI)}°
-              </Typography>
-              <Slider
-                size="small"
-                value={Math.round((selectedLayer.rotation * 180) / Math.PI)}
-                min={-180}
-                max={180}
-                step={1}
-                onChange={(_, v) => {
-                  const rad = ((v as number) * Math.PI) / 180;
-                  const fixed = clampInside(
-                    selectedLayer.cx,
-                    selectedLayer.cy,
-                    selectedLayer.w,
-                    selectedLayer.h,
-                    rad,
-                    vpSize,
-                  );
-                  setLayers((prev) =>
-                    prev.map((l) =>
-                      l.id === selectedLayer.id ? { ...l, rotation: rad, cx: fixed.cx, cy: fixed.cy } : l,
-                    ),
-                  );
-                }}
-                sx={{ mt: 0.5 }}
-              />
-            </Box>
-          </Box>
-        )}
-
-        <Stack spacing={1.5} sx={{ mt: 2 }}>
-          <Button
-            variant="contained"
-            size="small"
-            fullWidth
-            onClick={handleExport}
-            disabled={!pdfFile || layers.length === 0 || exporting}
-            startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-          >
-            {exporting ? '导出中…' : '导出 PDF'}
-          </Button>
-        </Stack>
-
-        {exporting && <LinearProgress sx={{ mt: 1.5 }} />}
-
-        {/* 快捷键 */}
-        <Box sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: 'divider' }}>
-          <Typography variant="overline" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 1.5 }}>
-            快捷键
-          </Typography>
-          <Stack spacing={0.75}>
-            {[
-              { k: '↑↓←→', d: '微调位置' },
-              { k: 'Shift + 方向键', d: '大步移动' },
-              { k: 'Delete', d: '删除选中层' },
-              { k: 'Esc', d: '取消选中' },
-            ].map((h) => (
-              <Box key={h.k} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
-                <Box sx={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10, color: 'text.secondary', bgcolor: 'rgba(15, 31, 29, 0.05)', px: 0.75, py: 0.25, borderRadius: 0.5, border: 1, borderColor: 'divider' }}>
-                  {h.k}
-                </Box>
-                <Typography variant="caption" color="text.secondary">{h.d}</Typography>
-              </Box>
-            ))}
-          </Stack>
-        </Box>
-      </Box>
-    </Box>
+    </ToolWorkbench>
   );
 }
 

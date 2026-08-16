@@ -10,11 +10,17 @@ import LinearProgress from '@mui/material/LinearProgress';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
-import LayersIcon from '@mui/icons-material/Layers';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import { BeforeAfterCompare } from '@/components/tools/BeforeAfterCompare';
-import { ToolWorkbench, type ToolWorkbenchTip } from '@/components/tools/ToolWorkbench';
-import { stashImage, buildCombineHref } from '@/lib/cross-tool-image';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+  type ResourceInfoData,
+} from '@/components/tools/ToolWorkbench';
+import FlowPill from '@/components/tools/FlowPill';
+import { useFlowInput, makeFlowImage, blobToFlowImage, flowImagesToFiles, type FlowImage } from '@/lib/flow';
 
 // 阶段标识：与图片去水印一致。idle = 无任务；loading = 加载识别引擎/模型
 // （含动态 import 与 wasm/onnx 模型下载）；processing = 跑模型推理 + 编码。
@@ -51,12 +57,25 @@ function classifyProgress(
   return null;
 }
 
-export default function BackgroundReplace() {
+export default function BackgroundReplace({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  // 资源信息：源文件大小（结果 blob 直接取 size）
+  const [sourceSize, setSourceSize] = React.useState(0);
 
   const [sourceUrl, setSourceUrl] = React.useState<string | null>(null);
   const [sourceName, setSourceName] = React.useState<string>('image');
   const [resultUrl, setResultUrl] = React.useState<string | null>(null);
+  // 结果 blob：除预览 URL 外再留存一份，供工作流出口（FlowPill）串到下一个工具
+  const [resultBlob, setResultBlob] = React.useState<Blob | null>(null);
+  // 原图自然尺寸：去背景结果与原图同尺寸，工作流出口需要携带宽高
+  const [nat, setNat] = React.useState<{ w: number; h: number } | null>(null);
   const [phase, setPhase] = React.useState<Phase>('idle');
   const [progress, setProgress] = React.useState(0);
   const [stageLabel, setStageLabel] = React.useState('');
@@ -72,6 +91,8 @@ export default function BackgroundReplace() {
     if (resultUrl) URL.revokeObjectURL(resultUrl);
     setSourceUrl(null);
     setResultUrl(null);
+    setResultBlob(null);
+    setNat(null);
     setError(null);
     setPhase('idle');
     setProgress(0);
@@ -88,31 +109,51 @@ export default function BackgroundReplace() {
     };
   }, [sourceUrl, resultUrl]);
 
-  const handlePickFile = (file: File) => {
+  // 统一文件加载入口：onFile / handleDrop / 工作流摄入共用
+  const loadFile = (file: File) => {
     setError(null);
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     if (resultUrl) URL.revokeObjectURL(resultUrl);
-    setSourceUrl(URL.createObjectURL(file));
+    const url = URL.createObjectURL(file);
+    setSourceUrl(url);
     setSourceName(file.name.replace(/\.[^.]+$/, ''));
+    setSourceSize(file.size);
     setResultUrl(null);
+    setResultBlob(null);
     setPhase('idle');
     setProgress(0);
     setStageLabel('');
     setStartedAt(null);
     setElapsed(0);
     setProcessingHintIdx(0);
+    // 解码原图自然尺寸：本工具不追踪尺寸，借助 blobToFlowImage 异步解码；
+    // 去背景结果与原图同尺寸，工作流出口（FlowPill）需要携带宽高
+    blobToFlowImage(file, file.name)
+      .then((im) => setNat({ w: im.width, h: im.height }))
+      .catch(() => setNat(null));
   };
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) handlePickFile(file);
+    if (file) loadFile(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDrop = (files: FileList | null) => {
     const file = Array.from(files ?? []).find((f) => f.type.startsWith('image/'));
-    if (file) handlePickFile(file);
+    if (file) loadFile(file);
   };
+
+  // 工作流摄入：?flow= 串流入口，单图工具取第一张直接载入（仅首次生效）
+  const flowInput = useFlowInput();
+  const flowConsumed = React.useRef(false);
+  React.useEffect(() => {
+    if (flowConsumed.current || !flowInput?.images.length) return;
+    flowConsumed.current = true;
+    const first = flowImagesToFiles(flowInput.images)[0];
+    if (first) loadFile(first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowInput]);
 
   const handleRemoveBackground = async () => {
     if (!sourceUrl) return;
@@ -163,6 +204,8 @@ export default function BackgroundReplace() {
       // 完成：resultUrl 就绪，重置进度状态
       const url = URL.createObjectURL(blob);
       setResultUrl(url);
+      // 结果 blob 留存：供工作流出口（FlowPill）串到下一个图片工具
+      setResultBlob(blob);
       setPhase('idle');
       setProgress(0);
       setStageLabel('');
@@ -186,22 +229,11 @@ export default function BackgroundReplace() {
     a.click();
   };
 
-  // 把去背景结果通过 sessionStorage 透传到「图片合成」工具，自动作为前景图叠加
-  const handleGoCombine = async () => {
-    if (!resultUrl) return;
-    setError(null);
-    try {
-      const blob = await fetch(resultUrl).then((r) => r.blob());
-      const token = await stashImage({
-        key: 'fg',
-        blob,
-        name: `${sourceName}-no-bg.png`,
-      });
-      window.location.href = buildCombineHref({ fg: token });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
+  // 工作流出口：透明 PNG 结果（与原图同尺寸）交给 FlowPill，可一键续到下一个图片工具
+  const flowImages: FlowImage[] = React.useMemo(
+    () => (resultBlob && nat ? [makeFlowImage(resultBlob, `${sourceName}-no-bg.png`, nat.w, nat.h)] : []),
+    [resultBlob, nat, sourceName],
+  );
 
   // busy 期间每秒刷新 elapsed；processing 阶段每 2 秒切换一次子步骤文字，
   // 给用户"程序还在动"的反馈（库内部推理/编码阶段无进度回调）
@@ -230,20 +262,37 @@ export default function BackgroundReplace() {
         ? `${PROCESSING_HINTS[processingHintIdx]} · 已用 ${elapsedStr || '0s'}`
         : null;
 
-  // 提示卡：右栏使用说明（保持简短）
-  const tips: ToolWorkbenchTip[] = [
-    {
-      icon: <AutoFixHighIcon sx={{ fontSize: 16 }} />,
-      text: '自动识别主体，输出透明背景 PNG',
-    },
-   
-  ];
+  // 侧边栏「资源信息」：处理前（原图）→ 处理后（透明 PNG，与原图同尺寸）
+  const resourceData: ResourceInfoData = {
+    name: sourceUrl ? sourceName : undefined,
+    before: sourceUrl
+      ? { size: sourceSize || undefined, width: nat?.w, height: nat?.h }
+      : undefined,
+    after: resultBlob ? { size: resultBlob.size, width: nat?.w, height: nat?.h } : undefined,
+  };
 
   return (
     <ToolWorkbench
+      title={title}
+      description={description}
       hasContent={!!sourceUrl}
       onPickFile={() => fileInputRef.current?.click()}
       onDrop={handleDrop}
+      usage={
+        <TipCard
+          icon={<AutoFixHighIcon />}
+          text="上传图片后自动识别主体，输出透明背景 PNG；AI 模型首次运行需下载，请稍候。"
+        />
+      }
+      resource={
+        sourceUrl ? (
+          <Box>
+            <SidebarTitle>资源信息</SidebarTitle>
+            <SidebarResourceInfo data={resourceData} />
+          </Box>
+        ) : undefined
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
       // 暴露一个自定义空状态：保留工具自己的"选择图片"按钮文案
       emptyState={
         <Box
@@ -279,12 +328,8 @@ export default function BackgroundReplace() {
             选择图片
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onFile} />
           </Button>
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 11, mt: 0.5 }}>
-            图片仅在本地处理，不会上传
-          </Typography>
         </Box>
       }
-      tips={tips}
     >
       {/* 左主区 */}
       <BeforeAfterCompare
@@ -293,6 +338,7 @@ export default function BackgroundReplace() {
         originalLabel="原图"
         resultLabel="去背景结果（透明 PNG）"
         resultCheckerboard
+        hideLabels
       />
 
       {busy && (
@@ -375,19 +421,9 @@ export default function BackgroundReplace() {
         >
           下载
         </Button>
-
-        {resultUrl && (
-          <Button
-            onClick={handleGoCombine}
-            variant="outlined"
-            size="small"
-            color="primary"
-            startIcon={<LayersIcon sx={{ fontSize: 16 }} />}
-          >
-            去图片合成换背景
-          </Button>
-        )}
       </Stack>
+
+      {/* 工作流串流出口已迁移到右侧栏底部（flow prop） */}
     </ToolWorkbench>
   );
 }

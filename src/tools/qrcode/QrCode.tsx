@@ -14,6 +14,14 @@ import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import DownloadIcon from '@mui/icons-material/Download';
 import QrCode2Icon from '@mui/icons-material/QrCode2';
 import QRCodeStyling, { type DotType } from 'qr-code-styling';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+} from '@/components/tools/ToolWorkbench';
+import FlowPill from '@/components/tools/FlowPill';
+import { makeFlowImage, type FlowImage } from '@/lib/flow';
 
 const ERR_LEVELS: { value: 'L' | 'M' | 'Q' | 'H'; label: string; desc: string }[] = [
   { value: 'L', label: 'L', desc: '约 7% 容错' },
@@ -57,7 +65,13 @@ const ColorField = ({ label, value, onChange }: { label: string; value: string; 
   </Stack>
 );
 
-export default function QrCode() {
+export default function QrCode({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [text, setText] = React.useState('');
   const [level, setLevel] = React.useState<'L' | 'M' | 'Q' | 'H'>('M');
   const [dotType, setDotType] = React.useState<DotType>('rounded');
@@ -65,9 +79,11 @@ export default function QrCode() {
   const [bgColor, setBgColor] = React.useState('#ffffff');
   const [logoDataUrl, setLogoDataUrl] = React.useState<string | null>(null);
   const [size, setSize] = React.useState(512);
+  const [resultBlob, setResultBlob] = React.useState<Blob | null>(null);
 
   const canvasHostRef = React.useRef<HTMLDivElement | null>(null);
   const instanceRef = React.useRef<QRCodeStyling | null>(null);
+  const genRef = React.useRef(0); // 结果 blob 生成序号，避免异步取图乱序覆盖
 
   // 选项变化即重绘（qr-code-styling 无异步，无需防抖）
   React.useEffect(() => {
@@ -77,6 +93,7 @@ export default function QrCode() {
     if (!value) {
       el.innerHTML = '';
       instanceRef.current = null;
+      setResultBlob(null);
       return;
     }
     const options = {
@@ -100,6 +117,14 @@ export default function QrCode() {
       instanceRef.current = new QRCodeStyling(options);
       instanceRef.current.append(el);
     }
+    // 结果生成完成后异步取 PNG blob，写入出参供工作流串流使用
+    const instance = instanceRef.current;
+    if (instance) {
+      const gen = ++genRef.current;
+      instance.getRawData('png').then((blob) => {
+        if (blob instanceof Blob && gen === genRef.current) setResultBlob(blob);
+      });
+    }
   }, [text, size, level, dotType, fgColor, bgColor, logoDataUrl]);
 
   const handleLogo = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -118,23 +143,25 @@ export default function QrCode() {
     }
   };
 
-  return (
-    <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: { xs: 3, md: 5 }, alignItems: 'flex-start' }}>
-      {/* 左侧：输入与选项 */}
-      <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-        <TextField
-          label="内容"
-          placeholder="输入文本或链接，例如 https://example.com"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          multiline
-          minRows={3}
-          fullWidth
-          variant="outlined"
-          sx={{ '& textarea': { fontFamily: 'var(--font-geist-mono)', fontSize: 14 } }}
-        />
+  // 工作流出口：二维码产物构造 FlowImage[]（canvas 为正方形，宽高即所选尺寸）
+  const flowImages: FlowImage[] = React.useMemo(
+    () => (resultBlob ? [makeFlowImage(resultBlob, '二维码.png', size, size)] : []),
+    [resultBlob, size],
+  );
 
-        <Stack spacing={2.5} sx={{ mt: 3 }}>
+  return (
+    <ToolWorkbench
+      title={title}
+      description={description}
+      hasContent
+      usage={
+        <TipCard
+          icon={<QrCode2Icon sx={{ fontSize: 16 }} />}
+          text="输入文本或链接后自动生成二维码，可自定义颜色、点样式与中心 logo。"
+        />
+      }
+      config={
+        <Stack spacing={2.5}>
           <Box>
             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
               纠错级别（越高越耐污损，可容纳 logo 遮挡）
@@ -199,18 +226,40 @@ export default function QrCode() {
             </ToggleButtonGroup>
           </Box>
         </Stack>
-      </Box>
+      }
+      resource={
+        <Box>
+          <SidebarTitle>资源信息</SidebarTitle>
+          <SidebarResourceInfo
+            data={{
+              name: text.trim() ? '二维码' : undefined,
+              after: resultBlob ? { size: resultBlob.size, width: size, height: size } : undefined,
+            }}
+          />
+        </Box>
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+    >
+      <Box>
+        <TextField
+          label="内容"
+          placeholder="输入文本或链接，例如 https://example.com"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          multiline
+          minRows={3}
+          fullWidth
+          variant="outlined"
+          sx={{ '& textarea': { fontFamily: 'var(--font-geist-mono)', fontSize: 14 } }}
+        />
 
-      {/* 右侧：预览与下载 */}
-      <Box sx={{ width: { xs: '100%', md: 300 }, flexShrink: 0 }}>
-        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
-          预览
-        </Typography>
         <Box
           sx={{
             position: 'relative',
             width: '100%',
+            maxWidth: 480,
             aspectRatio: '1 / 1',
+            mt: 2.5,
             borderRadius: 1,
             border: 1,
             borderColor: 'divider',
@@ -257,18 +306,19 @@ export default function QrCode() {
             </Stack>
           )}
         </Box>
-        <Button
-          variant="contained"
-          size="small"
-          fullWidth
-          onClick={download}
-          disabled={!text.trim()}
-          startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-          sx={{ mt: 1.5 }}
-        >
-          下载 PNG
-        </Button>
+
+        <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: 'center' }}>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={download}
+            disabled={!text.trim()}
+            startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+          >
+            下载 PNG
+          </Button>
+        </Stack>
       </Box>
-    </Box>
+    </ToolWorkbench>
   );
 }

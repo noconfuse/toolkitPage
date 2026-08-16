@@ -1,16 +1,15 @@
 import type { Metadata } from 'next';
 import dynamic from 'next/dynamic';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
 import { SITE_URL } from '@/lib/site-config';
 import { breadcrumbJsonLd } from '@/lib/json-ld';
 import { CATEGORIES, getToolByHref } from '@/lib/tools-registry';
 
-const QrCode = dynamic(() => import('@/tools/image/qrcode/QrCode'), {
+const QrCode = dynamic(() => import('@/tools/qrcode/QrCode'), {
   ssr: false,
 });
 
-const TOOL = getToolByHref('/tools/image/qrcode')!;
+const TOOL = getToolByHref('/tools/qrcode/generator')!;
 const TITLE = TOOL.title;
 
 export const metadata: Metadata = {
@@ -46,25 +45,8 @@ export default function Page() {
   ]);
 
   return (
-    <Box>
-      <Typography
-        variant="h2"
-        sx={{
-          fontSize: { xs: 24, md: 32 },
-          fontWeight: 500,
-          letterSpacing: '-0.02em',
-          lineHeight: 1.1,
-          mb: 1,
-        }}
-      >
-        {TITLE}
-      </Typography>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-        {TOOL.description}
-      </Typography>
-
-      <QrCode />
+    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+      <QrCode title={TITLE} description={TOOL.description} />
 
       <script
         type="application/ld+json"

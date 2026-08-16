@@ -10,7 +10,7 @@ import { TOOLS_BY_CATEGORY } from '@/lib/tools-registry';
 
 const TITLE = '工具索引';
 const DESCRIPTION =
-  '按分类浏览 Toolkit Page 提供的全部在线工具，所有工具均在浏览器内运行。';
+  '按分类浏览 Toolkit Page 提供的全部在线工具。';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -30,7 +30,7 @@ export default function ToolsIndexPage() {
     { name: '工具索引', href: '/tools' },
   ]);
   return (
-    <Box>
+    <Box sx={{ px: { xs: 2, sm: 3, md: 4, lg: 5 } }}>
       <Box sx={{ pt: { xs: 2, md: 4 }, pb: { xs: 4, md: 6 } }}>
         <Stack direction="row" spacing={1.5} sx={{ mb: 3, alignItems: "baseline" }}>
           <Typography

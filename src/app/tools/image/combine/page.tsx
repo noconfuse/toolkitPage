@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
+import dynamic from 'next/dynamic';
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Stack from '@mui/material/Stack';
-import Tooltip from '@mui/material/Tooltip';
 import { SITE_URL } from '@/lib/site-config';
 import { breadcrumbJsonLd } from '@/lib/json-ld';
 import { CATEGORIES, getToolByHref } from '@/lib/tools-registry';
-import ImageCombine from '@/tools/image/combine/ImageCombine';
+
+// 与其它图片工具一致：客户端组件 ssr:false，避免 useSearchParams 在预渲染时报 Suspense 错误
+const ImageCombine = dynamic(() => import('@/tools/image/combine/ImageCombine'), { ssr: false });
 
 const TOOL = getToolByHref('/tools/image/combine')!;
 const TITLE = TOOL.title;
@@ -23,44 +23,6 @@ export const metadata: Metadata = {
     type: 'website',
   },
 };
-
-const PRESET_TOOLTIP = (
-  <Box sx={{ p: 0.5, maxWidth: 280 }}>
-    <Typography
-      variant="caption"
-      sx={{
-        display: 'block',
-        fontWeight: 500,
-        color: 'inherit',
-        mb: 0.5,
-      }}
-    >
-      常见场景
-    </Typography>
-    {[
-      { t: 'LOGO 贴图', m: '默认' },
-      { t: '光效叠加', m: '加亮' },
-      { t: '剪贴蒙版', m: '剪贴' },
-      { t: '橡皮擦', m: '橡皮擦' },
-    ].map((p) => (
-      <Box
-        key={p.t}
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          gap: 2,
-          fontSize: 12,
-          lineHeight: 1.6,
-        }}
-      >
-        <span>{p.t}</span>
-        <span style={{ opacity: 0.6, fontFamily: 'var(--font-geist-mono)' }}>
-          {p.m}
-        </span>
-      </Box>
-    ))}
-  </Box>
-);
 
 export default function Page() {
   const jsonLd = {
@@ -82,72 +44,8 @@ export default function Page() {
   ]);
 
   return (
-    <Box>
-      {/* 头部：标题 + 常见场景 tooltip 按钮 */}
-      <Stack
-        direction="row"
-        spacing={1.5}
-        sx={{ mb: 1, alignItems: 'center', flexWrap: 'wrap' }}
-      >
-        <Typography
-          variant="h2"
-          sx={{
-            fontSize: { xs: 24, md: 32 },
-            fontWeight: 500,
-            letterSpacing: '-0.02em',
-            lineHeight: 1.1,
-          }}
-        >
-          {TITLE}
-        </Typography>
-        <Tooltip title={PRESET_TOOLTIP} placement="bottom-start" arrow>
-          <Box
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.5,
-              px: 1.25,
-              py: 0.5,
-              fontSize: 12,
-              fontWeight: 500,
-              color: 'text.secondary',
-              border: 1,
-              borderColor: 'divider',
-              borderRadius: 999,
-              cursor: 'help',
-              transition: 'all 160ms ease',
-              '&:hover': {
-                borderColor: 'text.secondary',
-                color: 'text.primary',
-              },
-            }}
-          >
-            常见场景
-            <Box
-              component="span"
-              sx={{
-                fontSize: 10,
-                width: 14,
-                height: 14,
-                borderRadius: '50%',
-                bgcolor: 'rgba(15, 31, 29, 0.06)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontFamily: 'var(--font-geist-mono)',
-              }}
-            >
-              ?
-            </Box>
-          </Box>
-        </Tooltip>
-      </Stack>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
-        {TOOL.description}
-      </Typography>
-
-      <ImageCombine />
+    <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+      <ImageCombine title={TITLE} description={TOOL.description} />
 
       <script
         type="application/ld+json"

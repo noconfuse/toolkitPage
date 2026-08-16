@@ -209,8 +209,10 @@ export default function ToolsLayout({ children }: { children: React.ReactNode })
         {sidebarContent}
       </Box>
 
-      {/* 主内容区：自身加内边距 */}
-      <Box sx={{ flex: 1, minWidth: 0, px: { xs: 2, sm: 3, md: 4, lg: 5 }, pt: { xs: 3, md: 5 }, pb: { xs: 6, md: 10 } }}>
+      {/* 主内容区：内边距由各页面/工具骨架自行控制（工具页交给 ToolWorkbench 两栏统一 padding）。
+          flex column 让页面根容器（flex: 1）撑满与侧边栏相同的高度，
+          工具内容列因此能与侧边栏边框线一样延伸到页面底部 */}
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
         {children}
       </Box>
     </Box>

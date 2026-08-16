@@ -20,6 +20,8 @@ export interface BeforeAfterCompareProps {
   resultLabel?: string;
   /** result 容器是否用棋盘格背景（用于透明 PNG） */
   resultCheckerboard?: boolean;
+  /** 隐藏上方的"原图 / 结果"标签行 */
+  hideLabels?: boolean;
 }
 
 export function BeforeAfterCompare({
@@ -28,6 +30,7 @@ export function BeforeAfterCompare({
   originalLabel = '原图',
   resultLabel = '处理结果',
   resultCheckerboard = false,
+  hideLabels = false,
 }: BeforeAfterCompareProps) {
   const hasOriginal = !!originalUrl;
   const hasResult = !!resultUrl;
@@ -78,16 +81,18 @@ export function BeforeAfterCompare({
 
   return (
     <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          mb: 1,
-        }}
-      >
-        <Typography variant="subtitle2">{originalLabel}</Typography>
-        <Typography variant="subtitle2">{resultLabel}</Typography>
-      </Box>
+      {!hideLabels && (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            mb: 1,
+          }}
+        >
+          <Typography variant="subtitle2">{originalLabel}</Typography>
+          <Typography variant="subtitle2">{resultLabel}</Typography>
+        </Box>
+      )}
 
       {/* 内容区：图片等比显示，居中，不固定宽度（隐形图撑开容器，比例 = 图片比例） */}
       <Box sx={{ display: 'flex', justifyContent: 'center' }}>

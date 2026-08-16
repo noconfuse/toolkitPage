@@ -5,11 +5,9 @@ import { SITE_URL } from '@/lib/site-config';
 import { breadcrumbJsonLd } from '@/lib/json-ld';
 import { CATEGORIES, getToolByHref } from '@/lib/tools-registry';
 
-const ImageCompress = dynamic(() => import('@/tools/image/compress/ImageCompress'), {
-  ssr: false,
-});
+const ImageCrop = dynamic(() => import('@/tools/image/crop/ImageCrop'), { ssr: false });
 
-const TOOL = getToolByHref('/tools/image/compress')!;
+const TOOL = getToolByHref('/tools/image/crop')!;
 const TITLE = TOOL.title;
 
 export const metadata: Metadata = {
@@ -46,7 +44,7 @@ export default function Page() {
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-      <ImageCompress title={TITLE} description={TOOL.description} />
+      <ImageCrop title={TITLE} description={TOOL.description} />
 
       <script
         type="application/ld+json"

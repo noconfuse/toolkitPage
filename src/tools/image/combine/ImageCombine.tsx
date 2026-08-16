@@ -17,9 +17,18 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import VerticalAlignTopIcon from '@mui/icons-material/VerticalAlignTop';
 import VerticalAlignBottomIcon from '@mui/icons-material/VerticalAlignBottom';
+import LayersIcon from '@mui/icons-material/Layers';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  ShortcutList,
+  SidebarResourceInfo,
+} from '@/components/tools/ToolWorkbench';
 import {
   CANVAS_W,
   CANVAS_H,
+  aabb,
   clampInside,
   computeMove,
   computeResize,
@@ -28,8 +37,10 @@ import {
   pickCorner,
   type Point,
 } from './_lib/transform';
+import FlowPill from '@/components/tools/FlowPill';
 import { SelectedOverlay } from '@/components/tools/SelectedOverlay';
 import { resolveImageFromSearch } from '@/lib/cross-tool-image';
+import { useFlowInput, flowImagesToFiles, makeFlowImage, type FlowImage } from '@/lib/flow';
 
 type CompositeMode = GlobalCompositeOperation;
 
@@ -44,6 +55,7 @@ type Layer = {
   opacity: number; // 0-1
   mode: CompositeMode;
   name: string;
+  radius: number; // 圆角（画布像素，0 = 直角）
 };
 
 const MODE_PRESETS: ReadonlyArray<{
@@ -62,12 +74,54 @@ const MODE_PRESETS: ReadonlyArray<{
 
 const HIT_SIZE = 12; // px，旋转后的屏幕坐标
 
-export default function ImageCombine() {
+// 圆角矩形路径（手动 arcTo 实现，兼容无 ctx.roundRect 的旧环境）
+const roundedRectPath = (
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) => {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.arcTo(x + w, y, x + w, y + rr, rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
+  ctx.lineTo(x + rr, y + h);
+  ctx.arcTo(x, y + h, x, y + h - rr, rr);
+  ctx.lineTo(x, y + rr);
+  ctx.arcTo(x, y, x + rr, y, rr);
+  ctx.closePath();
+  return ctx;
+};
+
+// 吸附对齐：移动时贴近其他图层（边缘/中心）或画布（边缘/中心）自动吸附并显示高亮线
+const SNAP_TOL = 8; // 吸附阈值（屏幕像素，换算画布像素时除以 scale）
+type SnapLine = { axis: 'v' | 'h'; pos: number };
+
+export default function ImageCombine({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const guideCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const baseFileInputRef = React.useRef<HTMLInputElement | null>(null);
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
 
   const [layers, setLayers] = React.useState<Layer[]>([]);
+  // 拖拽中吸附产生的对齐辅助线（绘制在 guideCanvas 上，不参与导出）
+  const [snapLines, setSnapLines] = React.useState<SnapLine[]>([]);
+  // layers 的最新值镜像，供拖拽移动计算吸附时读取，避免闭包陈旧
+  const layersRef = React.useRef<Layer[]>(layers);
+  React.useEffect(() => {
+    layersRef.current = layers;
+  }, [layers]);
   // 背景色（画布属性，不参与层级）：color + opacity
   const [bgColor, setBgColor] = React.useState<{ color: string; opacity: number } | null>(null);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -119,10 +173,23 @@ export default function ImageCombine() {
     for (const layer of layers) {
       ctx.save();
       ctx.globalAlpha = layer.opacity;
-      ctx.globalCompositeOperation = layer.mode;
       ctx.translate(layer.cx, layer.cy);
       ctx.rotate(layer.rotation);
-      ctx.drawImage(layer.img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+
+      if (layer.radius > 0) {
+        // 图片：圆角路径裁剪后绘制
+        ctx.save();
+        ctx.globalCompositeOperation = layer.mode;
+        roundedRectPath(ctx, -layer.w / 2, -layer.h / 2, layer.w, layer.h, layer.radius);
+        ctx.clip();
+        ctx.drawImage(layer.img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.globalCompositeOperation = layer.mode;
+        ctx.drawImage(layer.img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
+        ctx.restore();
+      }
       ctx.restore();
     }
   }, [bgColor, canvasW, canvasH, layers]);
@@ -143,6 +210,83 @@ export default function ImageCombine() {
     },
     [canvasW, canvasH],
   );
+
+  // ───────── 吸附对齐 ─────────
+  // 把移动层的 AABB 三参考线（左/中/右、上/中/下）与其它图层的 AABB 三参考线
+  // 以及画布边缘/中心对齐：命中阈值内吸附并返回高亮线（画布坐标）。
+  const applySnap = React.useCallback(
+    (layer: Layer, others: Layer[]): { cx: number; cy: number; lines: SnapLine[] } => {
+      const tol = SNAP_TOL / scale;
+      const lines: SnapLine[] = [];
+      let cx = layer.cx;
+      let cy = layer.cy;
+
+      const trySnap = (axis: 'x' | 'y') => {
+        const bb = aabb(cx, cy, layer.w, layer.h, layer.rotation);
+        const me =
+          axis === 'x'
+            ? [bb.x, bb.x + bb.w / 2, bb.x + bb.w]
+            : [bb.y, bb.y + bb.h / 2, bb.y + bb.h];
+        const targets: number[] =
+          axis === 'x' ? [0, canvasW / 2, canvasW] : [0, canvasH / 2, canvasH];
+        for (const o of others) {
+          const ob = aabb(o.cx, o.cy, o.w, o.h, o.rotation);
+          if (axis === 'x') targets.push(ob.x, ob.x + ob.w / 2, ob.x + ob.w);
+          else targets.push(ob.y, ob.y + ob.h / 2, ob.y + ob.h);
+        }
+        let best: { diff: number; t: number; m: number } | null = null;
+        for (const t of targets) {
+          for (const m of me) {
+            const diff = Math.abs(m - t);
+            if (best === null || diff < best.diff) best = { diff, t, m };
+          }
+        }
+        if (best && best.diff <= tol) {
+          if (axis === 'x') {
+            cx += best.t - best.m;
+            lines.push({ axis: 'v', pos: best.t });
+          } else {
+            cy += best.t - best.m;
+            lines.push({ axis: 'h', pos: best.t });
+          }
+        }
+      };
+
+      trySnap('x');
+      trySnap('y');
+      return { cx, cy, lines };
+    },
+    [scale, canvasW, canvasH],
+  );
+
+  // 对齐辅助线绘制：吸附命中时在 guideCanvas 上画出贯穿画布的高亮线
+  React.useEffect(() => {
+    const g = guideCanvasRef.current;
+    if (!g) return;
+    const ctx = g.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    const drawn = new Set<string>();
+    for (const line of snapLines) {
+      const key = `${line.axis}:${Math.round(line.pos)}`;
+      if (drawn.has(key)) continue;
+      drawn.add(key);
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      if (line.axis === 'v') {
+        ctx.moveTo(line.pos, 0);
+        ctx.lineTo(line.pos, canvasH);
+      } else {
+        ctx.moveTo(0, line.pos);
+        ctx.lineTo(canvasW, line.pos);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [snapLines, canvasW, canvasH]);
 
   // 暴露 scale 给覆盖层用
   React.useLayoutEffect(() => {
@@ -201,6 +345,7 @@ export default function ImageCombine() {
           opacity: 1,
           mode: 'source-over',
           name: resolved.bg.name,
+          radius: 0,
         });
       }
       if (resolved.fg) {
@@ -217,6 +362,7 @@ export default function ImageCombine() {
           opacity: 1,
           mode: 'source-over',
           name: resolved.fg.name,
+          radius: 0,
         });
       }
       if (incoming.length > 0) {
@@ -244,9 +390,8 @@ export default function ImageCombine() {
 
   // ───────── 添加图层 ─────────
   // 新图默认添加到顶层；画布尺寸由用户设置，添加图片不改动画布
-  const handleAddImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // 单张图片摄入：文件选择与工作流串流（?flow=）共用
+  const addImageFile = async (file: File) => {
     const img = await readImage(file);
     // 默认 contain 到画布的 60%，居中
     const ratio = Math.min((canvasW * 0.6) / img.width, (canvasH * 0.6) / img.height);
@@ -264,11 +409,35 @@ export default function ImageCombine() {
       opacity: 1,
       mode: 'source-over',
       name: file.name,
+      radius: 0,
     };
     setLayers((prev) => [...prev, layer]);
     setSelectedId(id);
+  };
+
+  const handleAddImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await addImageFile(file);
     e.target.value = '';
   };
+
+  // ToolWorkbench 统一处理拖拽：每张图作为一个图层加入
+  const onToolDrop = (files: FileList | null) => {
+    const list = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+    list.forEach((f) => void addImageFile(f));
+  };
+
+  // ───────── 工作流串流摄入（?flow=） ─────────
+  // 挂载时把上游工具传来的图片整批加入图层，复用 addImageFile 的文件摄入逻辑
+  const flowInput = useFlowInput();
+  const flowConsumed = React.useRef(false);
+  React.useEffect(() => {
+    if (flowConsumed.current || !flowInput?.images.length) return;
+    flowConsumed.current = true;
+    Promise.allSettled(flowImagesToFiles(flowInput.images).map((f) => addImageFile(f)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowInput]);
 
   // ───────── 选中 ─────────
   const selectedLayer = layers.find((l) => l.id === selectedId) ?? null;
@@ -389,27 +558,36 @@ export default function ImageCombine() {
     const onMove = (e: MouseEvent) => {
       const p = screenToCanvas(e.clientX, e.clientY);
       if (!p) return;
-      setLayers((prev) =>
-        prev.map((l) => {
-          if (l.id !== dragState.layerId) return l;
-          if (dragState.kind === 'move') {
-            const c = computeMove(dragState, p, l.w, l.h, l.rotation, { w: canvasW, h: canvasH });
-            return { ...l, cx: c.cx, cy: c.cy };
-          }
-          if (dragState.kind === 'resize') {
-            const s = computeResize(dragState, p, { w: canvasW, h: canvasH });
-            return { ...l, w: s.w, h: s.h }; // 中心不变
-          }
-          if (dragState.kind === 'rotate') {
-            const r = computeRotate(dragState, p, l.w, l.h, { w: canvasW, h: canvasH });
-            return { ...l, rotation: r.rotation, cx: r.cx, cy: r.cy };
-          }
-          return l;
-        }),
-      );
+      const cur = layersRef.current;
+      const idx = cur.findIndex((l) => l.id === dragState.layerId);
+      if (idx < 0) return;
+      const l = cur[idx];
+
+      if (dragState.kind === 'move') {
+        const c = computeMove(dragState, p, l.w, l.h, l.rotation, { w: canvasW, h: canvasH });
+        // 吸附：以最新图层列表为参照，命中阈值内对齐并返回高亮线
+        const others = cur.filter((o) => o.id !== l.id);
+        const snapped = applySnap({ ...l, cx: c.cx, cy: c.cy }, others);
+        const fixed = clampInside(snapped.cx, snapped.cy, l.w, l.h, l.rotation, { w: canvasW, h: canvasH });
+        setSnapLines(snapped.lines);
+        setLayers((prev) => prev.map((x) => (x.id === l.id ? { ...x, cx: fixed.cx, cy: fixed.cy } : x)));
+      } else {
+        // 缩放 / 旋转时不做吸附，清掉可能残留的对齐线
+        setSnapLines([]);
+        if (dragState.kind === 'resize') {
+          const s = computeResize(dragState, p, { w: canvasW, h: canvasH });
+          setLayers((prev) => prev.map((x) => (x.id === l.id ? { ...x, w: s.w, h: s.h } : x)));
+        } else if (dragState.kind === 'rotate') {
+          const r = computeRotate(dragState, p, l.w, l.h, { w: canvasW, h: canvasH });
+          setLayers((prev) => prev.map((x) => (x.id === l.id ? { ...x, rotation: r.rotation, cx: r.cx, cy: r.cy } : x)));
+        }
+      }
     };
 
-    const onUp = () => setDragState({ kind: 'none' });
+    const onUp = () => {
+      setDragState({ kind: 'none' });
+      setSnapLines([]);
+    };
 
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -417,7 +595,7 @@ export default function ImageCombine() {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [dragState, screenToCanvas, scale, canvasW, canvasH]);
+  }, [dragState, screenToCanvas, scale, canvasW, canvasH, applySnap]);
 
   // ───────── 键盘快捷键 ─────────
   React.useEffect(() => {
@@ -495,6 +673,11 @@ export default function ImageCombine() {
   };
 
   // ───────── 下载 / 清空 ─────────
+  // 出参（工作流串流）：合成画布 → PNG Blob，供 FlowPill 接力到下一工具
+  const [resultBlob, setResultBlob] = React.useState<Blob | null>(null);
+  const [resultW, setResultW] = React.useState(0);
+  const [resultH, setResultH] = React.useState(0);
+
   const downloadDataUrl = (dataUrl: string, filename: string) => {
     const link = document.createElement('a');
     link.href = dataUrl;
@@ -542,6 +725,17 @@ export default function ImageCombine() {
     requestAnimationFrame(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
+      // 写工作流出参：合成画布 → PNG Blob + 画布宽高
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) return;
+          setResultBlob(blob);
+          setResultW(canvas.width);
+          setResultH(canvas.height);
+        },
+        'image/png',
+        1,
+      );
       downloadDataUrl(canvas.toDataURL('image/png', 1), `合成图-${Date.now()}.png`);
     });
   };
@@ -562,19 +756,352 @@ export default function ImageCombine() {
     setSelectedId(null);
   };
 
+  // 工作流出参：合成结果 → FlowImage（供 FlowPill 接力到下一工具）
+  const flowImages: FlowImage[] = React.useMemo(
+    () => (resultBlob ? [makeFlowImage(resultBlob, '合成图.png', resultW, resultH)] : []),
+    [resultBlob, resultW, resultH],
+  );
+
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: { xs: 'column', lg: 'row' },
-        gap: 2,
-        alignItems: 'flex-start',
-      }}
+    <ToolWorkbench
+      title={title}
+      description={description}
+      hasContent
+      onDrop={onToolDrop}
+      usage={
+        <>
+          <TipCard
+            icon={<LayersIcon />}
+            text="把多张图片作为图层叠加合成：画布上拖动调整位置，贴近其他图片或画布边缘/中心时自动吸附并显示对齐线；角点缩放、上方手柄旋转；右栏可改混合模式、透明度、圆角与背景色。"
+          />
+          <Box sx={{ mt: 2.5 }}>
+            <ShortcutList
+              items={[
+                { k: '↑↓←→', d: '微调位置' },
+                { k: 'Shift + 方向键', d: '大步移动' },
+                { k: 'Delete', d: '删除选中层' },
+                { k: 'Esc', d: '取消选中' },
+              ]}
+            />
+          </Box>
+        </>
+      }
+      config={
+        <>
+          {/* CONFIG_COMBINE */}
+          <SidebarTitle>画布尺寸 (px)</SidebarTitle>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            <TextField
+              size="small"
+              type="number"
+              value={canvasW}
+              onChange={(e) => {
+                const v = Math.max(1, Math.floor(Number(e.target.value) || CANVAS_W));
+                setCanvasW(v);
+              }}
+              slotProps={{ htmlInput: { min: 1, style: { fontSize: 13 } } }}
+              sx={{ width: 110 }}
+            />
+            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
+              ×
+            </Typography>
+            <TextField
+              size="small"
+              type="number"
+              value={canvasH}
+              onChange={(e) => {
+                const v = Math.max(1, Math.floor(Number(e.target.value) || CANVAS_H));
+                setCanvasH(v);
+              }}
+              slotProps={{ htmlInput: { min: 1, style: { fontSize: 13 } } }}
+              sx={{ width: 110 }}
+            />
+          </Stack>
+
+          <Box sx={{ mt: 2.5 }}>
+            <SidebarTitle>背景色</SidebarTitle>
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+              <Box component="label" sx={{ position: 'relative', display: 'inline-flex', cursor: 'pointer' }}>
+                <Box
+                  sx={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: '50%',
+                    bgcolor: bgColor?.color ?? '#ffffff',
+                    border: 1,
+                    borderColor: 'divider',
+                    boxShadow: (t) => t.shadows[1],
+                  }}
+                />
+                <input
+                  type="color"
+                  value={bgColor?.color ?? '#ffffff'}
+                  onChange={(e) => handleColorBase(e.target.value)}
+                  style={{ position: 'absolute', width: 1, height: 1, opacity: 0, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}
+                />
+              </Box>
+              <Slider
+                size="small"
+                value={bgColor?.opacity ?? 1}
+                min={0}
+                max={1}
+                step={0.05}
+                onChange={(_, v) => handleBgOpacity(v as number)}
+                disabled={!bgColor}
+                sx={{ flex: 1 }}
+              />
+              <IconButton size="small" onClick={handleClearBg} disabled={!bgColor} title="清除背景色">
+                <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Stack>
+          </Box>
+          {/* CONFIG_COMBINE_2 */}
+          <Box sx={{ mt: 2.5 }}>
+            <SidebarTitle>图层 · {layers.length}</SidebarTitle>
+            {layers.length === 0 ? (
+              <Typography variant="body2" color="text.disabled" sx={{ py: 0.5, fontSize: 13 }}>
+                还没有图层，先添加图片
+              </Typography>
+            ) : (
+              <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
+                {layers.map((layer, i) => {
+                  const selected = layer.id === selectedId;
+                  return (
+                    <Box
+                      key={layer.id}
+                      onClick={() => setSelectedId(layer.id)}
+                      sx={{
+                        py: 1.25,
+                        px: 1,
+                        borderRadius: 1,
+                        cursor: 'pointer',
+                        transition: 'background-color 160ms ease',
+                        bgcolor: selected ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
+                        border: 1,
+                        borderColor: selected ? 'primary.main' : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          width: 20,
+                          flexShrink: 0,
+                          fontFamily: 'var(--font-geist-mono)',
+                          fontSize: 11,
+                          color: 'text.secondary',
+                          textAlign: 'right',
+                        }}
+                      >
+                        {String(i + 1).padStart(2, '0')}
+                      </Box>
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography
+                          variant="body2"
+                          sx={{
+                            fontWeight: 500,
+                            fontSize: 13,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {layer.name}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ fontFamily: 'var(--font-geist-mono)', fontSize: 10 }}
+                        >
+                          {MODE_PRESETS.find((m) => m.v === layer.mode)?.label} ·{' '}
+                          {Math.round(layer.opacity * 100)}% ·{' '}
+                          {Math.round((layer.rotation * 180) / Math.PI)}°
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveLayer(layer.id, 'top');
+                          }}
+                          disabled={i === layers.length - 1}
+                          sx={{ p: 0.25 }}
+                        >
+                          <VerticalAlignTopIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveLayer(layer.id, 'up');
+                          }}
+                          disabled={i === layers.length - 1}
+                          sx={{ p: 0.25 }}
+                        >
+                          <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveLayer(layer.id, 'down');
+                          }}
+                          disabled={i === 0}
+                          sx={{ p: 0.25 }}
+                        >
+                          <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveLayer(layer.id, 'bottom');
+                          }}
+                          disabled={i === 0}
+                          sx={{ p: 0.25 }}
+                        >
+                          <VerticalAlignBottomIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteLayer(layer.id);
+                          }}
+                          sx={{ p: 0.25, color: 'text.secondary' }}
+                        >
+                          <DeleteOutlineIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Box>
+          {/* CONFIG_COMBINE_3 */}
+          {selectedLayer && (
+            <Box sx={{ mt: 2.5, pt: 2.5, borderTop: 1, borderColor: 'divider' }}>
+              <SidebarTitle>选中层</SidebarTitle>
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                  合成方式
+                </Typography>
+                <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5 }}>
+                  {MODE_PRESETS.map((m) => {
+                    const active = selectedLayer.mode === m.v;
+                    return (
+                      <Tooltip key={m.v} title={m.desc} placement="top">
+                        <Box
+                          onClick={() => updateLayer(selectedLayer.id, { mode: m.v })}
+                          sx={{
+                            px: 1.25,
+                            py: 0.4,
+                            fontSize: 12,
+                            fontWeight: 500,
+                            borderRadius: 0.75,
+                            border: 1,
+                            borderColor: active ? 'primary.main' : 'divider',
+                            bgcolor: active ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
+                            color: active ? 'primary.main' : 'text.primary',
+                            cursor: 'pointer',
+                            transition: 'all 160ms ease',
+                            '&:hover': {
+                              borderColor: active ? 'primary.main' : 'text.secondary',
+                            },
+                          }}
+                        >
+                          {m.label}
+                        </Box>
+                      </Tooltip>
+                    );
+                  })}
+                </Stack>
+              </Box>
+
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                  不透明度 · {Math.round(selectedLayer.opacity * 100)}%
+                </Typography>
+                <Slider
+                  size="small"
+                  value={selectedLayer.opacity}
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  onChange={(_, v) => updateLayer(selectedLayer.id, { opacity: v as number })}
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
+
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                  旋转 · {Math.round((selectedLayer.rotation * 180) / Math.PI)}°
+                </Typography>
+                <Slider
+                  size="small"
+                  value={Math.round((selectedLayer.rotation * 180) / Math.PI)}
+                  min={-180}
+                  max={180}
+                  step={1}
+                  onChange={(_, v) => {
+                    const rad = ((v as number) * Math.PI) / 180;
+                    const fixed = clampInside(
+                      selectedLayer.cx,
+                      selectedLayer.cy,
+                      selectedLayer.w,
+                      selectedLayer.h,
+                      rad,
+                    );
+                    setLayers((prev) =>
+                      prev.map((l) =>
+                        l.id === selectedLayer.id
+                          ? { ...l, rotation: rad, cx: fixed.cx, cy: fixed.cy }
+                          : l,
+                      ),
+                    );
+                  }}
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
+
+              <Box sx={{ mt: 2 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                  圆角 · {Math.round(selectedLayer.radius)}px
+                </Typography>
+                <Slider
+                  size="small"
+                  value={selectedLayer.radius}
+                  min={0}
+                  max={200}
+                  step={1}
+                  onChange={(_, v) => updateLayer(selectedLayer.id, { radius: v as number })}
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
+            </Box>
+          )}
+        </>
+      }
+      resource={
+        <SidebarResourceInfo
+          data={{
+            name: layers.length ? `${layers.length} 个图层` : undefined,
+            extra: [
+              { label: '画布', value: `${canvasW} × ${canvasH}` },
+              ...(resultBlob ? [{ label: '已导出', value: `${resultW} × ${resultH}` }] : []),
+            ],
+          }}
+        />
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
     >
       {/* ───────── 画布 + 覆盖层 + 下方按钮 ───────── */}
-      <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-        {/* 画布预览列：固定 maxHeight 70vh，避免用户设置的长条画布（宽 800 × 高 3000）
-            把页面撑得非常高。CSS maxHeight 与 aspectRatio 冲突时 maxHeight 优先。 */}
+        {/* 画布预览列：CSS 宽度固定占满容器，高度跟随画布宽高比自适应（宽 800 × 高 3000
+            的长条画布会自然撑高，比例始终正确，画布不会被拉伸变形）。 */}
         <Box
           ref={surfaceRef}
           onMouseDown={onSurfaceMouseDown}
@@ -582,7 +1109,6 @@ export default function ImageCombine() {
             position: 'relative',
             width: '100%',
             aspectRatio: `${canvasW} / ${canvasH}`,
-            maxHeight: '70vh',
             borderRadius: 1,
             overflow: 'hidden',
             border: 1,
@@ -612,6 +1138,20 @@ export default function ImageCombine() {
               height: '100%',
               display: 'block',
               // 不设背景色：透明区域直接露出下方棋盘格
+            }}
+          />
+
+          {/* 对齐辅助线层：吸附命中时绘制贯穿画布的高亮线（不参与导出） */}
+          <canvas
+            ref={guideCanvasRef}
+            width={canvasW}
+            height={canvasH}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              pointerEvents: 'none',
             }}
           />
 
@@ -726,441 +1266,6 @@ export default function ImageCombine() {
               : `${canvasW} × ${canvasH}`}
           </Typography>
         </Stack>
-      </Box>
-
-      {/* ───────── 右栏：画布设置 + 图层列表 + 选中层属性 ───────── */}
-      <Box sx={{ width: { xs: '100%', lg: 280 }, flexShrink: 0 }}>
-        {/* 画布尺寸（真实像素）：界面宽度固定，高度按比例自适应 */}
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="overline"
-            sx={{
-              color: 'text.secondary',
-              fontFamily: 'var(--font-geist-mono)',
-              display: 'block',
-              mb: 1,
-            }}
-          >
-            画布尺寸 (px)
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-            <TextField
-              size="small"
-              type="number"
-              value={canvasW}
-              onChange={(e) => {
-                const v = Math.max(1, Math.floor(Number(e.target.value) || CANVAS_W));
-                setCanvasW(v);
-              }}
-              slotProps={{ htmlInput: { min: 1, style: { fontSize: 13 } } }}
-              sx={{ width: 110 }}
-            />
-            <Typography variant="body2" color="text.secondary" sx={{ flexShrink: 0 }}>
-              ×
-            </Typography>
-            <TextField
-              size="small"
-              type="number"
-              value={canvasH}
-              onChange={(e) => {
-                const v = Math.max(1, Math.floor(Number(e.target.value) || CANVAS_H));
-                setCanvasH(v);
-              }}
-              slotProps={{ htmlInput: { min: 1, style: { fontSize: 13 } } }}
-              sx={{ width: 110 }}
-            />
-          </Stack>
-        </Box>
-
-        {/* 背景色（画布属性）：颜色 + 不透明度 + 单独清除 */}
-        <Box sx={{ mb: 3 }}>
-          <Typography
-            variant="overline"
-            sx={{
-              color: 'text.secondary',
-              fontFamily: 'var(--font-geist-mono)',
-              display: 'block',
-              mb: 1,
-            }}
-          >
-            背景色
-          </Typography>
-          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-            <Box
-              component="label"
-              sx={{
-                position: 'relative',
-                display: 'inline-flex',
-                cursor: 'pointer',
-              }}
-            >
-              <Box
-                sx={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: '50%',
-                  bgcolor: bgColor?.color ?? '#ffffff',
-                  border: 1,
-                  borderColor: 'divider',
-                  boxShadow: (t) => t.shadows[1],
-                }}
-              />
-              <input
-                type="color"
-                value={bgColor?.color ?? '#ffffff'}
-                onChange={(e) => handleColorBase(e.target.value)}
-                style={{
-                  position: 'absolute',
-                  width: 1,
-                  height: 1,
-                  opacity: 0,
-                  overflow: 'hidden',
-                  clip: 'rect(0 0 0 0)',
-                }}
-              />
-            </Box>
-            <Slider
-              size="small"
-              value={bgColor?.opacity ?? 1}
-              min={0}
-              max={1}
-              step={0.05}
-              onChange={(_, v) => handleBgOpacity(v as number)}
-              disabled={!bgColor}
-              sx={{ flex: 1 }}
-            />
-            <IconButton
-              size="small"
-              onClick={handleClearBg}
-              disabled={!bgColor}
-              title="清除背景色"
-            >
-              <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-            </IconButton>
-          </Stack>
-        </Box>
-
-        <Typography
-          variant="overline"
-          sx={{
-            color: 'text.secondary',
-            fontFamily: 'var(--font-geist-mono)',
-            display: 'block',
-            mb: 1.5,
-          }}
-        >
-          图层 · {layers.length}
-        </Typography>
-
-        {layers.length === 0 ? (
-          <Typography
-            variant="body2"
-            color="text.disabled"
-            sx={{ py: 2, fontSize: 13 }}
-          >
-            还没有图层，先添加图片
-          </Typography>
-        ) : (
-          <Stack
-            divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}
-          >
-            {layers.map((layer, i) => {
-              const selected = layer.id === selectedId;
-              return (
-                <Box
-                  key={layer.id}
-                  onClick={() => setSelectedId(layer.id)}
-                  sx={{
-                    py: 1.25,
-                    px: 1,
-                    borderRadius: 1,
-                    cursor: 'pointer',
-                    transition: 'background-color 160ms ease',
-                    bgcolor: selected ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
-                    border: 1,
-                    borderColor: selected ? 'primary.main' : 'transparent',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 20,
-                      flexShrink: 0,
-                      fontFamily: 'var(--font-geist-mono)',
-                      fontSize: 11,
-                      color: 'text.secondary',
-                      textAlign: 'right',
-                    }}
-                  >
-                    {String(i + 1).padStart(2, '0')}
-                  </Box>
-                  <Box sx={{ flex: 1, minWidth: 0 }}>
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        fontWeight: 500,
-                        fontSize: 13,
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                      }}
-                    >
-                      {layer.name}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{
-                        fontFamily: 'var(--font-geist-mono)',
-                        fontSize: 10,
-                      }}
-                    >
-                      {MODE_PRESETS.find((m) => m.v === layer.mode)?.label} ·{' '}
-                      {Math.round(layer.opacity * 100)}% ·{' '}
-                      {Math.round((layer.rotation * 180) / Math.PI)}°
-                    </Typography>
-                  </Box>
-                  <Stack direction="row" spacing={0} sx={{ flexShrink: 0 }}>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveLayer(layer.id, 'top');
-                      }}
-                      disabled={i === layers.length - 1}
-                      sx={{ p: 0.25 }}
-                    >
-                      <VerticalAlignTopIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveLayer(layer.id, 'up');
-                      }}
-                      disabled={i === layers.length - 1}
-                      sx={{ p: 0.25 }}
-                    >
-                      <KeyboardArrowUpIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveLayer(layer.id, 'down');
-                      }}
-                      disabled={i === 0}
-                      sx={{ p: 0.25 }}
-                    >
-                      <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveLayer(layer.id, 'bottom');
-                      }}
-                      disabled={i === 0}
-                      sx={{ p: 0.25 }}
-                    >
-                      <VerticalAlignBottomIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteLayer(layer.id);
-                      }}
-                      sx={{ p: 0.25, color: 'text.secondary' }}
-                    >
-                      <DeleteOutlineIcon sx={{ fontSize: 14 }} />
-                    </IconButton>
-                  </Stack>
-                </Box>
-              );
-            })}
-          </Stack>
-        )}
-
-        {/* 选中层属性 */}
-        {selectedLayer && (
-          <Box sx={{ mt: 4, pt: 3, borderTop: 1, borderColor: 'divider' }}>
-            <Typography
-              variant="overline"
-              sx={{
-                color: 'text.secondary',
-                fontFamily: 'var(--font-geist-mono)',
-                display: 'block',
-                mb: 2,
-              }}
-            >
-              选中层
-            </Typography>
-
-            <Box sx={{ mb: 2 }}>
-              <Typography
-                variant="caption"
-                sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}
-              >
-                合成方式
-              </Typography>
-              <Stack
-                direction="row"
-                spacing={0.5}
-                sx={{ flexWrap: 'wrap', gap: 0.5 }}
-              >
-                {MODE_PRESETS.map((m) => {
-                  const active = selectedLayer.mode === m.v;
-                  return (
-                    <Tooltip
-                      key={m.v}
-                      title={m.desc}
-                      placement="top"
-                    >
-                      <Box
-                        onClick={() => updateLayer(selectedLayer.id, { mode: m.v })}
-                        sx={{
-                          px: 1.25,
-                          py: 0.4,
-                          fontSize: 12,
-                          fontWeight: 500,
-                          borderRadius: 0.75,
-                          border: 1,
-                          borderColor: active ? 'primary.main' : 'divider',
-                          bgcolor: active ? 'rgba(15, 61, 58, 0.06)' : 'transparent',
-                          color: active ? 'primary.main' : 'text.primary',
-                          cursor: 'pointer',
-                          transition: 'all 160ms ease',
-                          '&:hover': {
-                            borderColor: active ? 'primary.main' : 'text.secondary',
-                          },
-                        }}
-                      >
-                        {m.label}
-                      </Box>
-                    </Tooltip>
-                  );
-                })}
-              </Stack>
-            </Box>
-
-            <Box sx={{ mb: 2 }}>
-              <Typography
-                variant="caption"
-                sx={{ color: 'text.secondary', display: 'block' }}
-              >
-                不透明度 · {Math.round(selectedLayer.opacity * 100)}%
-              </Typography>
-              <Slider
-                size="small"
-                value={selectedLayer.opacity}
-                min={0}
-                max={1}
-                step={0.05}
-                onChange={(_, v) =>
-                  updateLayer(selectedLayer.id, { opacity: v as number })
-                }
-                sx={{ mt: 0.5 }}
-              />
-            </Box>
-
-            <Box>
-              <Typography
-                variant="caption"
-                sx={{ color: 'text.secondary', display: 'block' }}
-              >
-                旋转 · {Math.round((selectedLayer.rotation * 180) / Math.PI)}°
-              </Typography>
-              <Slider
-                size="small"
-                value={Math.round((selectedLayer.rotation * 180) / Math.PI)}
-                min={-180}
-                max={180}
-                step={1}
-                onChange={(_, v) => {
-                  const rad = ((v as number) * Math.PI) / 180;
-                  const fixed = clampInside(
-                    selectedLayer.cx,
-                    selectedLayer.cy,
-                    selectedLayer.w,
-                    selectedLayer.h,
-                    rad,
-                  );
-                  setLayers((prev) =>
-                    prev.map((l) =>
-                      l.id === selectedLayer.id
-                        ? { ...l, rotation: rad, cx: fixed.cx, cy: fixed.cy }
-                        : l,
-                    ),
-                  );
-                }}
-                sx={{ mt: 0.5 }}
-              />
-            </Box>
-          </Box>
-        )}
-
-        {/* 快捷键 + 提示 */}
-        <Box
-          sx={{
-            mt: 4,
-            pt: 3,
-            borderTop: 1,
-            borderColor: 'divider',
-          }}
-        >
-          <Typography
-            variant="overline"
-            sx={{
-              color: 'text.secondary',
-              fontFamily: 'var(--font-geist-mono)',
-              display: 'block',
-              mb: 1.5,
-            }}
-          >
-            快捷键
-          </Typography>
-          <Stack spacing={0.75}>
-            {[
-              { k: '↑↓←→', d: '微调位置' },
-              { k: 'Shift + 方向键', d: '大步移动' },
-              { k: 'Delete', d: '删除选中层' },
-              { k: 'Esc', d: '取消选中' },
-            ].map((h) => (
-              <Box
-                key={h.k}
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  fontSize: 11,
-                }}
-              >
-                <Box
-                  sx={{
-                    fontFamily: 'var(--font-geist-mono)',
-                    fontSize: 10,
-                    color: 'text.secondary',
-                    bgcolor: 'rgba(15, 31, 29, 0.05)',
-                    px: 0.75,
-                    py: 0.25,
-                    borderRadius: 0.5,
-                    border: 1,
-                    borderColor: 'divider',
-                  }}
-                >
-                  {h.k}
-                </Box>
-                <Typography variant="caption" color="text.secondary">
-                  {h.d}
-                </Typography>
-              </Box>
-            ))}
-          </Stack>
-        </Box>
-      </Box>
-    </Box>
+    </ToolWorkbench>
   );
 }

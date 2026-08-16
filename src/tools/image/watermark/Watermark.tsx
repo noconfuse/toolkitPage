@@ -22,12 +22,21 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
 import FolderZipIcon from '@mui/icons-material/FolderZip';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
-import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import ColorLensIcon from '@mui/icons-material/ColorLens';
 import OpenWithIcon from '@mui/icons-material/OpenWith';
 import CheckIcon from '@mui/icons-material/Check';
 import JSZip from 'jszip';
+import FlowPill from '@/components/tools/FlowPill';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+  formatBytes,
+} from '@/components/tools/ToolWorkbench';
+import { useFlowInput, flowImagesToFiles, makeFlowImage, type FlowImage } from '@/lib/flow';
 
 type WmType = 'text' | 'image';
 
@@ -84,12 +93,6 @@ const readDataUrl = (file: File) =>
     fr.onerror = reject;
     fr.readAsDataURL(file);
   });
-
-const formatBytes = (n: number): string => {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-};
 
 // 原图 / logo 解码缓存：切换与重跑复用，避免重复解码
 const imgCache = new Map<string, Promise<HTMLImageElement>>();
@@ -269,12 +272,17 @@ const exportOne = async (it: Item, cfg: WmConfig): Promise<Blob> => {
 
 const extOf = (t: string): string => (t === 'image/jpeg' ? 'jpg' : t === 'image/webp' ? 'webp' : 'png');
 
-export default function WatermarkTool() {
+export default function WatermarkTool({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [items, setItems] = React.useState<Item[]>([]);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [working, setWorking] = React.useState(false);
   const [progress, setProgress] = React.useState<{ total: number; done: number } | null>(null);
-  const [dragOver, setDragOver] = React.useState(false);
   const [dragging, setDragging] = React.useState(false);
   const [sizeTick, setSizeTick] = React.useState(0);
 
@@ -326,17 +334,25 @@ export default function WatermarkTool() {
     }
   };
 
+  // 摄入工作流（?flow=）产物：一次性消费，避免重复摄入
+  const flowInput = useFlowInput();
+  const flowConsumed = React.useRef(false);
+  React.useEffect(() => {
+    if (flowConsumed.current || !flowInput?.images.length) return;
+    flowConsumed.current = true;
+    appendFiles(flowImagesToFiles(flowInput.images));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowInput]);
+
   const handleAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await appendFiles(Array.from(e.target.files ?? []));
     e.target.value = '';
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files ?? []).filter((f) => f.type.startsWith('image/'));
-    if (files.length === 0) return;
-    await appendFiles(files);
+  // ToolWorkbench 统一处理拖拽（按文件列表分发）
+  const onToolDrop = (files: FileList | null) => {
+    const list = Array.from(files ?? []).filter((f) => f.type.startsWith('image/'));
+    if (list.length) void appendFiles(list);
   };
 
   // ───────── 增删改 ─────────
@@ -600,28 +616,224 @@ export default function WatermarkTool() {
   const totalSize = items.reduce((s, it) => s + it.origSize, 0);
   const cfg = selectedItem?.cfg;
 
+  // 工作流出口：已完成产物构造 FlowImage[]（加水印保留原文件名与尺寸，直接复用 origWidth/origHeight）
+  const flowImages = React.useMemo<FlowImage[]>(
+    () =>
+      items
+        .filter((it): it is Item & { outBlob: Blob } => !!it.outBlob)
+        .map((it) => makeFlowImage(it.outBlob, it.name, it.origWidth, it.origHeight)),
+    [items],
+  );
+
   return (
-    <Box
-      onDragOver={(e) => {
-        if (e.dataTransfer.types.includes('Files')) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'copy';
-          if (!dragOver) setDragOver(true);
-        }
-      }}
-      onDragLeave={(e) => {
-        if (e.currentTarget === e.target) setDragOver(false);
-      }}
-      onDrop={handleDrop}
-      sx={{
-        position: 'relative',
-        borderRadius: 1,
-        outline: dragOver ? '2px dashed' : '2px dashed transparent',
-        outlineColor: dragOver ? 'primary.main' : 'transparent',
-        outlineOffset: dragOver ? -2 : 0,
-      }}
-    >
-      {items.length === 0 ? (
+    <ToolWorkbench
+      title={title}
+      description={description}
+      hasContent={items.length > 0}
+      onDrop={onToolDrop}
+      usage={
+        <TipCard
+          icon={<OpenWithIcon />}
+          text="上传图片后在预览图上按住拖动即可调整水印位置；每张图可独立设置水印类型、文字、颜色与透明度。"
+        />
+      }
+      config={
+        selectedItem && cfg ? (
+          <>
+            <SidebarTitle>水印设置</SidebarTitle>
+            <Stack spacing={2.25}>
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                  水印类型
+                </Typography>
+                <ToggleButtonGroup
+                  exclusive
+                  size="small"
+                  fullWidth
+                  value={cfg.type}
+                  onChange={(_, v) => v && updateCfg({ type: v as WmType })}
+                >
+                  <ToggleButton value="text">文字</ToggleButton>
+                  <ToggleButton value="image">图片</ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+
+              {cfg.type === 'text' && (
+                <Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+                    水印文字
+                  </Typography>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    value={cfg.text}
+                    onChange={(e) => updateCfg({ text: e.target.value })}
+                    placeholder="输入水印文字"
+                  />
+                </Box>
+              )}
+
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+                  颜色
+                </Typography>
+                <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                  {COLOR_PRESETS.map((c) => {
+                    const active = cfg.color.toLowerCase() === c.toLowerCase();
+                    return (
+                      <Box
+                        key={c}
+                        onClick={() => updateCfg({ color: c })}
+                        sx={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: '50%',
+                          cursor: 'pointer',
+                          bgcolor: c,
+                          border: 1,
+                          borderColor: 'rgba(0,0,0,0.16)',
+                          boxShadow: active ? '0 0 0 2px rgba(15,61,58,0.3)' : 'none',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'box-shadow 160ms ease',
+                        }}
+                      >
+                        {active && (
+                          <CheckIcon
+                            sx={{
+                              fontSize: 14,
+                              color: (0.299 * hexToRgb(c)[0] + 0.587 * hexToRgb(c)[1] + 0.114 * hexToRgb(c)[2]) / 255 > 0.5
+                                ? '#0F1F1D'
+                                : '#FFFFFF',
+                            }}
+                          />
+                        )}
+                      </Box>
+                    );
+                  })}
+                  <label
+                    style={{
+                      position: 'relative',
+                      width: 26,
+                      height: 26,
+                      cursor: 'pointer',
+                      borderRadius: '50%',
+                      overflow: 'hidden',
+                      border: '1px dashed rgba(0,0,0,0.25)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    title="自定义颜色"
+                  >
+                    <ColorLensIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    <input
+                      type="color"
+                      value={cfg.color}
+                      onChange={(e) => updateCfg({ color: e.target.value })}
+                      style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
+                    />
+                  </label>
+                </Stack>
+              </Box>
+              {/* CONFIG_BODY_2 */}
+              {cfg.type === 'text' && (
+                <Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                    字号 · {Math.round(cfg.fontSize)}px
+                  </Typography>
+                  <Slider
+                    size="small"
+                    value={cfg.fontSize}
+                    min={12}
+                    max={160}
+                    onChange={(_, v) => updateCfg({ fontSize: v as number })}
+                    sx={{ mt: 0.5 }}
+                  />
+                </Box>
+              )}
+
+              <Box>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                  不透明度 · {Math.round(cfg.opacity * 100)}%
+                </Typography>
+                <Slider
+                  size="small"
+                  value={cfg.opacity}
+                  min={0.05}
+                  max={1}
+                  step={0.05}
+                  onChange={(_, v) => updateCfg({ opacity: v as number })}
+                  sx={{ mt: 0.5 }}
+                />
+              </Box>
+
+              {cfg.type === 'image' && (
+                <Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>
+                    水印图片
+                  </Typography>
+                  {cfg.logoDataUrl && (
+                    <Box
+                      sx={{
+                        mb: 1,
+                        width: 48,
+                        height: 48,
+                        borderRadius: 1,
+                        border: 1,
+                        borderColor: 'divider',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        overflow: 'hidden',
+                        bgcolor: '#fff',
+                      }}
+                    >
+                      <img src={cfg.logoDataUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%' }} />
+                    </Box>
+                  )}
+                  <Button variant="outlined" size="small" fullWidth component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+                    上传水印图片
+                    <input type="file" accept="image/*" hidden onChange={handleLogo} />
+                  </Button>
+                </Box>
+              )}
+
+              {cfg.type === 'image' && (
+                <Box>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                    水印大小 · {Math.round(cfg.logoScale * 100)}%
+                  </Typography>
+                  <Slider
+                    size="small"
+                    value={cfg.logoScale}
+                    min={0.05}
+                    max={0.5}
+                    step={0.01}
+                    onChange={(_, v) => updateCfg({ logoScale: v as number })}
+                    sx={{ mt: 0.5 }}
+                  />
+                </Box>
+              )}
+
+            </Stack>
+          </>
+        ) : undefined
+      }
+      resource={
+        <SidebarResourceInfo
+          data={{
+            name: items.length ? `${items.length} 张图片` : undefined,
+            before: items.length ? { size: totalSize } : undefined,
+            extra: hasOut
+              ? [{ label: '已导出', value: `${items.filter((x) => x.outBlob).length} 张` }]
+              : undefined,
+          }}
+        />
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      emptyState={
         <Box
           sx={{
             width: '100%',
@@ -654,13 +866,12 @@ export default function WatermarkTool() {
             <input type="file" accept="image/*" multiple hidden onChange={handleAdd} />
           </Button>
           <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 11, mt: 0.5 }}>
-            所有处理在浏览器内完成 · 每张图可独立设置水印
+            每张图可独立设置水印
           </Typography>
         </Box>
-      ) : (
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2, alignItems: 'flex-start' }}>
-          {/* ───────── 左：预览 + 缩略图 + 工具栏 ───────── */}
-          <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+      }
+    >
+      {/* ───────── 主区：预览 + 缩略图 + 工具栏 ───────── */}
             <Box
               onPointerDown={onPreviewPointerDown}
               sx={{
@@ -669,13 +880,6 @@ export default function WatermarkTool() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 minHeight: 340,
-                borderRadius: 1,
-                border: 1,
-                borderColor: 'divider',
-                bgcolor: '#fafaf7',
-                backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-                backgroundSize: '20px 20px',
-                backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
                 cursor: dragging ? 'grabbing' : selectedItem ? 'grab' : 'default',
                 touchAction: 'none',
               }}
@@ -686,6 +890,11 @@ export default function WatermarkTool() {
                   width: 'fit-content',
                   maxWidth: '100%',
                   maxHeight: 480,
+                  border: '1px dashed',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  overflow: 'hidden',
+                  background: '#fff',
                 }}
               >
                 <img
@@ -787,11 +996,27 @@ export default function WatermarkTool() {
                 继续添加
                 <input type="file" accept="image/*" multiple hidden onChange={handleAdd} />
               </Button>
-              <Tooltip title="清空全部">
-                <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
-                  <DeleteSweepIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
+              <Button
+                variant="text"
+                size="small"
+                color="inherit"
+                startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
+                onClick={clearAll}
+                disabled={items.length === 0}
+                sx={{ color: 'text.secondary' }}
+              >
+                清空
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />}
+                onClick={applyToAll}
+                disabled={!selectedItem || items.length < 2}
+                sx={{ textTransform: 'none' }}
+              >
+                将此配置应用到全部图片
+              </Button>
               <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}>
                 {items.length} 张 · {formatBytes(totalSize)}
               </Typography>
@@ -820,216 +1045,6 @@ export default function WatermarkTool() {
                 <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
               </Box>
             )}
-          </Box>
-
-          {/* ───────── 右：选中图水印配置 ───────── */}
-          {selectedItem && cfg && (
-            <Box sx={{ width: { xs: '100%', lg: 280 }, flexShrink: 0 }}>
-              <Typography
-                variant="overline"
-                sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 1.5 }}
-              >
-                水印设置
-              </Typography>
-              <Stack spacing={2.25}>
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                    水印类型
-                  </Typography>
-                  <ToggleButtonGroup
-                    exclusive
-                    size="small"
-                    fullWidth
-                    value={cfg.type}
-                    onChange={(_, v) => v && updateCfg({ type: v as WmType })}
-                  >
-                    <ToggleButton value="text">文字</ToggleButton>
-                    <ToggleButton value="image">图片</ToggleButton>
-                  </ToggleButtonGroup>
-                </Box>
-
-                {cfg.type === 'text' && (
-                  <Box>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                      水印文字
-                    </Typography>
-                    <TextField
-                      size="small"
-                      fullWidth
-                      value={cfg.text}
-                      onChange={(e) => updateCfg({ text: e.target.value })}
-                      placeholder="输入水印文字"
-                    />
-                  </Box>
-                )}
-
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
-                    颜色
-                  </Typography>
-                  <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
-                    {COLOR_PRESETS.map((c) => {
-                      const active = cfg.color.toLowerCase() === c.toLowerCase();
-                      return (
-                        <Box
-                          key={c}
-                          onClick={() => updateCfg({ color: c })}
-                          sx={{
-                            width: 26,
-                            height: 26,
-                            borderRadius: '50%',
-                            cursor: 'pointer',
-                            bgcolor: c,
-                            border: 1,
-                            borderColor: 'rgba(0,0,0,0.16)',
-                            boxShadow: active ? '0 0 0 2px rgba(15,61,58,0.3)' : 'none',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            transition: 'box-shadow 160ms ease',
-                          }}
-                        >
-                          {active && (
-                            <CheckIcon
-                              sx={{
-                                fontSize: 14,
-                                color: (0.299 * hexToRgb(c)[0] + 0.587 * hexToRgb(c)[1] + 0.114 * hexToRgb(c)[2]) / 255 > 0.5
-                                  ? '#0F1F1D'
-                                  : '#FFFFFF',
-                              }}
-                            />
-                          )}
-                        </Box>
-                      );
-                    })}
-                    <label
-                      style={{
-                        position: 'relative',
-                        width: 26,
-                        height: 26,
-                        cursor: 'pointer',
-                        borderRadius: '50%',
-                        overflow: 'hidden',
-                        border: '1px dashed rgba(0,0,0,0.25)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      title="自定义颜色"
-                    >
-                      <ColorLensIcon sx={{ fontSize: 14, color: 'text.secondary' }} />
-                      <input
-                        type="color"
-                        value={cfg.color}
-                        onChange={(e) => updateCfg({ color: e.target.value })}
-                        style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }}
-                      />
-                    </label>
-                  </Stack>
-                </Box>
-
-                {cfg.type === 'text' && (
-                  <Box>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                      字号 · {Math.round(cfg.fontSize)}px
-                    </Typography>
-                    <Slider
-                      size="small"
-                      value={cfg.fontSize}
-                      min={12}
-                      max={160}
-                      onChange={(_, v) => updateCfg({ fontSize: v as number })}
-                      sx={{ mt: 0.5 }}
-                    />
-                  </Box>
-                )}
-
-                <Box>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                    不透明度 · {Math.round(cfg.opacity * 100)}%
-                  </Typography>
-                  <Slider
-                    size="small"
-                    value={cfg.opacity}
-                    min={0.05}
-                    max={1}
-                    step={0.05}
-                    onChange={(_, v) => updateCfg({ opacity: v as number })}
-                    sx={{ mt: 0.5 }}
-                  />
-                </Box>
-
-                {cfg.type === 'image' && (
-                  <Box>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>
-                      水印图片
-                    </Typography>
-                    {cfg.logoDataUrl && (
-                      <Box
-                        sx={{
-                          mb: 1,
-                          width: 48,
-                          height: 48,
-                          borderRadius: 1,
-                          border: 1,
-                          borderColor: 'divider',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          overflow: 'hidden',
-                          bgcolor: '#fff',
-                        }}
-                      >
-                        <img src={cfg.logoDataUrl} alt="" style={{ maxWidth: '100%', maxHeight: '100%' }} />
-                      </Box>
-                    )}
-                    <Button variant="outlined" size="small" fullWidth component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-                      上传水印图片
-                      <input type="file" accept="image/*" hidden onChange={handleLogo} />
-                    </Button>
-                  </Box>
-                )}
-
-                {cfg.type === 'image' && (
-                  <Box>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                      水印大小 · {Math.round(cfg.logoScale * 100)}%
-                    </Typography>
-                    <Slider
-                      size="small"
-                      value={cfg.logoScale}
-                      min={0.05}
-                      max={0.5}
-                      step={0.01}
-                      onChange={(_, v) => updateCfg({ logoScale: v as number })}
-                      sx={{ mt: 0.5 }}
-                    />
-                  </Box>
-                )}
-
-                <Box sx={{ borderRadius: 1, border: 1, borderColor: 'divider', bgcolor: 'rgba(15,61,58,0.04)', px: 1.25, py: 1 }}>
-                  <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                    <OpenWithIcon sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0 }} />
-                    <Typography variant="body2" sx={{ fontSize: 12, color: 'text.secondary' }}>
-                      在左侧预览图上按住拖动，即可调整水印位置
-                    </Typography>
-                  </Stack>
-                </Box>
-
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={applyToAll}
-                  startIcon={<ContentCopyIcon sx={{ fontSize: 15 }} />}
-                  sx={{ alignSelf: 'flex-start', color: 'text.secondary', textTransform: 'none' }}
-                >
-                  将此配置应用到全部图片
-                </Button>
-              </Stack>
-            </Box>
-          )}
-        </Box>
-      )}
-    </Box>
+    </ToolWorkbench>
   );
 }

@@ -2,6 +2,7 @@ import * as React from 'react';
 import ImageIcon from '@mui/icons-material/Image';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import QrCode2Icon from '@mui/icons-material/QrCode2';
+import CropIcon from '@mui/icons-material/Crop';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 
@@ -27,6 +28,13 @@ export type Tool = {
   available: boolean;
   keywords: string[];
   faq?: { q: string; a: string }[];
+  /**
+   * 图片工作流 IO 能力声明：
+   * - input: 'single' 单图输入（工作流中进入逐张模式）/ 'multi' 批量输入 / 'text' 文本生成（不能承接工作流）
+   * - output: 'single' 产出一张 / 'multi' 产出一组
+   * 无该字段的工具不参与图片工作流串流。
+   */
+  flow?: { input: 'single' | 'multi' | 'text'; output: 'single' | 'multi' };
 };
 
 export const CATEGORIES: ReadonlyArray<ToolCategory> = [
@@ -44,6 +52,13 @@ export const CATEGORIES: ReadonlyArray<ToolCategory> = [
     icon: <PictureAsPdfIcon />,
     description: 'PDF 处理、文档转换、文本提取等。',
   },
+  {
+    id: 'qrcode',
+    label: '二维码工具',
+    href: '/tools/qrcode',
+    icon: <QrCode2Icon />,
+    description: '二维码生成、美化与定制等。',
+  },
 ];
 
 export const TOOLS: ReadonlyArray<Tool> = [
@@ -53,7 +68,8 @@ export const TOOLS: ReadonlyArray<Tool> = [
     title: '图片合成器',
     shortTitle: '图片合成',
     href: '/tools/image/combine',
-    description: '把多张图按不同效果合成一张，本地处理不上传。',
+    flow: { input: 'multi', output: 'single' },
+    description: '把多张图按不同效果合成一张。',
     longDescription:
       '在线图片合成工具，提供 11 种合成效果（默认叠加、加亮、剪贴蒙版、橡皮擦等），每一项都附带使用场景说明。可自定义画布尺寸，合成后一键下载 PNG。',
     icon: <ImageIcon />,
@@ -122,9 +138,10 @@ export const TOOLS: ReadonlyArray<Tool> = [
     title: '图片压缩',
     shortTitle: '图片压缩',
     href: '/tools/image/compress',
-    description: '在浏览器内压缩 PNG / JPEG / WebP，保留原始格式与尺寸，自动选择最优压缩方式。',
+    flow: { input: 'multi', output: 'multi' },
+    description: '压缩 PNG / JPEG / WebP，保留原始格式与尺寸，自动选择最优压缩方式。',
     longDescription:
-      '在线图片压缩工具：批量上传 PNG / JPEG / WebP 图片，保留原格式与原尺寸重新编码。自动选择最优压缩方式，无需手动调参；所有处理在浏览器内完成，文件不上传。',
+      '在线图片压缩工具：批量上传 PNG / JPEG / WebP 图片，保留原格式与原尺寸重新编码。自动选择最优压缩方式。',
     icon: <ImageIcon />,
     available: true,
     keywords: [
@@ -153,14 +170,53 @@ export const TOOLS: ReadonlyArray<Tool> = [
     ],
   },
   {
+    id: 'image-crop',
+    categoryId: 'image',
+    title: '图片裁剪',
+    shortTitle: '裁剪',
+    href: '/tools/image/crop',
+    flow: { input: 'single', output: 'single' },
+    description: '自由裁剪图片，支持 1:1、4:3、16:9 等比例预设。',
+    longDescription:
+      '在线图片裁剪工具：拖拽或调整四角即可裁剪，支持自由比例与 1:1、4:3、3:4、16:9、9:16 等常用比例预设，实时显示裁剪尺寸。保持原始格式与原分辨率（仅裁剪区域）。',
+    icon: <CropIcon />,
+    available: true,
+    keywords: [
+      '图片裁剪',
+      '裁剪图片',
+      '图片裁切',
+      '裁剪工具',
+      '1:1裁剪',
+      '16:9裁剪',
+      '比例裁剪',
+      '裁图',
+      '本地裁剪',
+    ],
+    faq: [
+      {
+        q: '图片会上传到服务器吗？',
+        a: '不会，裁剪完全在浏览器内通过 Canvas 完成，文件不会离开你的设备。',
+      },
+      {
+        q: '裁剪会压缩图片吗？',
+        a: '不会。裁剪只保留选区内的像素，分辨率按选区原样输出，不会额外缩小或压缩。',
+      },
+      {
+        q: '会改变图片格式吗？',
+        a: '保持原格式：PNG 输出 PNG，JPG 输出 JPG，WebP 输出 WebP。',
+      },
+    ],
+  },
+  {
     id: 'image-convert',
     categoryId: 'image',
     title: '图片格式转换',
     shortTitle: '格式转换',
     href: '/tools/image/convert',
-    description: '批量转换 PNG / JPG / WebP 格式，保持原尺寸，浏览器内完成。',
+    flow: { input: 'multi', output: 'multi' },
+    description: '批量转换 PNG / JPG / WebP 格式，保持原尺寸。',
     longDescription:
-      '在线图片格式转换工具：批量上传 PNG / JPG / WebP 图片，一键转换为目标格式，保持原尺寸。PNG 转 JPG 时自动填充白色背景。所有处理在浏览器内完成，文件不上传。',
+      '在线图片格式转换工具：批量上传 PNG / JPG / WebP 图片，一键转换为目标格式，保持原尺寸。PNG 转 JPG 时自动填充白色背景。',
     icon: <SwapHorizIcon />,
     available: true,
     keywords: [
@@ -188,10 +244,11 @@ export const TOOLS: ReadonlyArray<Tool> = [
   },
   {
     id: 'qrcode-generator',
-    categoryId: 'image',
+    categoryId: 'qrcode',
     title: '二维码生成',
     shortTitle: '二维码',
-    href: '/tools/image/qrcode',
+    href: '/tools/qrcode/generator',
+    flow: { input: 'text', output: 'single' },
     description: '输入文本或链接，实时生成二维码 PNG，可选纠错级别与尺寸。',
     longDescription:
       '在线二维码生成工具：输入文本或链接即可实时生成二维码，支持 4 档纠错级别与 3 种输出尺寸，一键下载 PNG。全部在浏览器内完成，内容不会上传。',
@@ -248,7 +305,7 @@ export const TOOLS: ReadonlyArray<Tool> = [
     href: '/tools/document/pdf-merge',
     description: '合并多个 PDF 为一个，或按页码范围将一个 PDF 拆分成多个 PDF。',
     longDescription:
-      '在线 PDF 合并与拆分工具：合并模式把多个 PDF 按顺序合并为一个；拆分模式按你指定的页码范围（如 1-3, 5-8）将一个 PDF 拆成多个 PDF 并打包 ZIP 下载，支持多个区间与单个页码。全部在浏览器内完成，文件不上传。',
+      '在线 PDF 合并与拆分工具：合并模式把多个 PDF 按顺序合并为一个；拆分模式按你指定的页码范围（如 1-3, 5-8）将一个 PDF 拆成多个 PDF 并打包 ZIP 下载，支持多个区间与单个页码。',
     icon: <PictureAsPdfIcon />,
     available: true,
     keywords: ['PDF合并', 'PDF拆分', '合并PDF', '拆分PDF', 'PDF按页拆分', 'PDF区间拆分', 'PDF提取指定页', 'PDF拼接'],
@@ -277,9 +334,10 @@ export const TOOLS: ReadonlyArray<Tool> = [
     title: '图片加水印',
     shortTitle: '加水印',
     href: '/tools/image/watermark',
+    flow: { input: 'multi', output: 'multi' },
     description: '批量给图片加文字或图片水印，可调透明度、大小与位置。',
     longDescription:
-      '在线图片加水印工具：批量上传图片，添加文字或图片水印，支持透明度、大小与位置设置，调整即时生效。保持原格式与原尺寸，全部在浏览器内完成，文件不上传。',
+      '在线图片加水印工具：批量上传图片，添加文字或图片水印，支持透明度、大小与位置设置，调整即时生效。保持原格式与原尺寸。',
     icon: <ImageIcon />,
     available: true,
     keywords: ['图片加水印', '水印', '文字水印', '图片水印', '批量水印', '版权水印'],
@@ -300,9 +358,10 @@ export const TOOLS: ReadonlyArray<Tool> = [
     title: '图片去水印',
     shortTitle: '去水印',
     href: '/tools/image/remove-watermark',
-    description: '画笔涂抹水印区域，AI 在浏览器内重建被遮挡的像素，纯浏览器处理。',
+    flow: { input: 'single', output: 'single' },
+    description: '画笔涂抹水印区域，AI 自动重建被遮挡的像素。',
     longDescription:
-      '在线图片去水印工具：上传图片后用画笔涂抹水印区域，AI 会根据周围内容重建被遮挡的部分。支持拖动分割线对比处理前后效果，也可继续涂抹补充修复，一键下载 PNG。所有处理在浏览器内完成，文件不上传。',
+      '在线图片去水印工具：上传图片后用画笔涂抹水印区域，AI 会根据周围内容重建被遮挡的部分。支持拖动分割线对比处理前后效果，也可继续涂抹补充修复，一键下载 PNG。',
     icon: <ImageIcon />,
     available: true,
     keywords: [
@@ -336,9 +395,10 @@ export const TOOLS: ReadonlyArray<Tool> = [
     title: '图片去背景',
     shortTitle: '去背景',
     href: '/tools/image/background-replace',
+    flow: { input: 'single', output: 'single' },
     description: 'AI 自动识别主体并生成透明背景 PNG，下载后可叠到任意背景图上。',
     longDescription:
-      '在线图片去背景工具：上传图片后 AI 自动识别主体并生成带透明通道的 PNG 抠图。常见人像、商品、物体均可精准抠图，毛发和半透明边缘也是处理重点。下载 PNG 后可到「图片合成」工具叠加到任意背景图上。所有处理在浏览器内完成，文件不上传。',
+      '在线图片去背景工具：上传图片后 AI 自动识别主体并生成带透明通道的 PNG 抠图。常见人像、商品、物体均可精准抠图，毛发和半透明边缘也是处理重点。下载 PNG 后可到「图片合成」工具叠加到任意背景图上。',
     icon: <AutoFixHighIcon />,
     available: true,
     keywords: [

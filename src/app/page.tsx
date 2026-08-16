@@ -13,6 +13,7 @@ import {
   ThumbImageCombine,
   ThumbImageCompress,
   ThumbImageConvert,
+  ThumbImageCrop,
   ThumbPdfImageConvert,
   ThumbPdfMerge,
   ThumbPdfStamp,
@@ -24,7 +25,7 @@ import {
 
 const TITLE = 'Toolkit · 浏览器即用的小工具';
 const DESCRIPTION =
-  '图片合成、PDF 贴图，以及更多本地优先的浏览器工具。所有处理都在你的设备上完成，文件不上传。';
+  '图片合成、PDF 贴图，以及更多本地优先的浏览器工具。';
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -42,6 +43,7 @@ const THUMBS: Record<string, React.ReactNode> = {
   'image-combine': <ThumbImageCombine />,
   'image-compress': <ThumbImageCompress />,
   'image-convert': <ThumbImageConvert />,
+  'image-crop': <ThumbImageCrop />,
   'qrcode-generator': <ThumbQrCode />,
   'pdf-stamp': <ThumbPdfStamp />,
   'pdf-image-convert': <ThumbPdfImageConvert />,

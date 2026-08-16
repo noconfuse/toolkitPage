@@ -23,9 +23,17 @@ import FolderZipIcon from '@mui/icons-material/FolderZip';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import JSZip from 'jszip';
-import { ToolWorkbench, SidebarTitle } from '@/components/tools/ToolWorkbench';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+  formatBytes,
+} from '@/components/tools/ToolWorkbench';
+import FlowPill from '@/components/tools/FlowPill';
 import LibImageQuant from 'libimagequant-wasm';
 import { getMozJpeg } from '../_lib/encoders';
+import { useFlowInput, flowImagesToFiles, makeFlowImage, type FlowImage } from '@/lib/flow';
 
 type ImgKind = 'png' | 'jpeg' | 'webp';
 
@@ -78,12 +86,6 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     i.onerror = () => reject(new Error('图片解码失败'));
     i.src = src;
   });
-
-const formatBytes = (n: number): string => {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-};
 
 // ---- 一次性最佳实践参数（经 /tests/imgs 真实图片实测选定）----
 // 注意：libimagequant-wasm 存在「quality 与 maxColors 同时设置即崩溃」的 bug
@@ -173,7 +175,13 @@ const compressOne = async (it: Item): Promise<Blob> => {
   });
 };
 
-export default function ImageCompress() {
+export default function ImageCompress({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [items, setItems] = React.useState<Item[]>([]);
   const [working, setWorking] = React.useState(false);
   const [progress, setProgress] = React.useState<Progress | null>(null);
@@ -193,9 +201,18 @@ export default function ImageCompress() {
     itemsRef.current = items;
   }, [items]);
 
-  const handleAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    // 已声明在上方
-    const files = Array.from(e.target.files ?? []);
+  // 摄入工作流（?flow=）产物：一次性消费，避免重复摄入
+  const flowInput = useFlowInput();
+  const flowConsumed = React.useRef(false);
+  React.useEffect(() => {
+    if (flowConsumed.current || !flowInput?.images.length) return;
+    flowConsumed.current = true;
+    appendFiles(flowImagesToFiles(flowInput.images));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowInput]);
+
+  // 文件摄入：SUPPORTED_TYPES 过滤 → 解码 → 构造 Item 推入列表，并触发一次重压
+  const appendFiles = async (files: File[]) => {
     if (!files.length) return;
     setError(null);
     const next: Item[] = [];
@@ -223,6 +240,10 @@ export default function ImageCompress() {
       queueMicrotask(() => recompress());
       return merged;
     });
+  };
+
+  const handleAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    await appendFiles(Array.from(e.target.files ?? []));
     e.target.value = '';
   };
 
@@ -362,6 +383,18 @@ export default function ImageCompress() {
   const hasOut = items.some((it) => it.outBlob);
   const savedPct = totalOut > 0 ? Math.max(0, Math.round((1 - totalOut / Math.max(totalOrig, 1)) * 100)) : 0;
 
+  // 结果态串流出口：把已完成项还原为 FlowImage[] 交给 FlowPill（尺寸与原图一致，直接用已有字段）
+  const flowImages: FlowImage[] = React.useMemo(
+    () =>
+      items
+        .filter(
+          (it): it is Item & { outBlob: Blob; outWidth: number; outHeight: number } =>
+            !!(it.done && it.outBlob),
+        )
+        .map((it) => makeFlowImage(it.outBlob, it.name, it.outWidth, it.outHeight)),
+    [items],
+  );
+
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // 拖入上传：接收 ToolWorkbench 外壳转发的文件列表
@@ -399,8 +432,9 @@ export default function ImageCompress() {
 
   return (
     <ToolWorkbench
+      title={title}
+      description={description}
       hasContent={items.length > 0}
-      sidebarWidth={280}
       onPickFile={() => fileInputRef.current?.click()}
       onDrop={handleDrop}
       emptyState={
@@ -446,14 +480,20 @@ export default function ImageCompress() {
             />
           </Button>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, mt: 0.5 }}>
-            所有处理在浏览器内完成 · 保留原格式
+            保留原格式
           </Typography>
         </Box>
       }
-      sidebar={
+      usage={
+        <TipCard
+          icon={<UploadFileIcon />}
+          text="上传 PNG / JPG / WebP 图片，自动选择最优压缩方式，保留原格式与尺寸，无需手动调参。"
+        />
+      }
+      config={
         <Box>
-          <SidebarTitle>策略</SidebarTitle>
-          <Stack spacing={1.5}>
+          <SidebarTitle>压缩策略</SidebarTitle>
+          <Stack spacing={1}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 1 }}>
               <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                 保留格式
@@ -462,12 +502,28 @@ export default function ImageCompress() {
                 原 → 原
               </Typography>
             </Box>
-            <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10, mt: 1 }}>
-              自动选择最优压缩方式，保留原格式与尺寸，无需手动调参。图片全部在浏览器本地处理，不会上传。
+            <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 10 }}>
+              自动选择最优压缩方式，保留原格式与尺寸，无需手动调参。
             </Typography>
           </Stack>
         </Box>
       }
+      resource={
+        items.length > 0 ? (
+          <Box>
+            <SidebarTitle>资源信息</SidebarTitle>
+            <SidebarResourceInfo
+              data={{
+                name: `${items.length} 张图片`,
+                before: { size: totalOrig },
+                after: hasOut ? { size: totalOut } : undefined,
+                extra: hasOut ? [{ label: '节省', value: `${savedPct}%` }] : undefined,
+              }}
+            />
+          </Box>
+        ) : undefined
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
     >
       {/* 左主区：图片列表（拖拽上传由 ToolWorkbench 外壳统一处理） */}
       <Stack spacing={1.5}>
@@ -638,6 +694,27 @@ export default function ImageCompress() {
             })}
           </Stack>
 
+        {/* 整体进度：位于图片列表与操作行之间 */}
+        {working && progress && (
+          <Box>
+            <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
+                {progress.currentId ? '正在压缩…' : '收尾中…'}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
+              >
+                {progress.done}/{progress.total}
+              </Typography>
+            </Stack>
+            <LinearProgress
+              variant="determinate"
+              value={(progress.done / progress.total) * 100}
+            />
+          </Box>
+        )}
+
         {/* 操作行 */}
         {items.length > 0 && (
           <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
@@ -683,25 +760,7 @@ export default function ImageCompress() {
           </Stack>
         )}
 
-        {working && progress && (
-          <Box sx={{ mt: 1.5 }}>
-            <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
-                {progress.currentId ? '正在压缩…' : '收尾中…'}
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
-              >
-                {progress.done}/{progress.total}
-              </Typography>
-            </Stack>
-            <LinearProgress
-              variant="determinate"
-              value={(progress.done / progress.total) * 100}
-            />
-          </Box>
-        )}
+        {/* 结果态串流出口已迁移到右侧栏底部（flow prop） */}
     </ToolWorkbench>
   );
 }

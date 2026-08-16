@@ -8,7 +8,7 @@ import { SITE_URL } from '@/lib/site-config';
 import { breadcrumbJsonLd } from '@/lib/json-ld';
 import { getCategoryByHref, TOOLS } from '@/lib/tools-registry';
 
-const CATEGORY = getCategoryByHref('/tools/document')!;
+const CATEGORY = getCategoryByHref('/tools/qrcode')!;
 const TITLE = CATEGORY.label;
 const DESCRIPTION = CATEGORY.description;
 
@@ -41,7 +41,7 @@ export default function Page() {
               fontFamily: 'var(--font-geist-mono)',
             }}
           >
-            §01
+            §03
           </Typography>
           <Typography variant="overline" sx={{ color: 'text.secondary' }}>
             分类

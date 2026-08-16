@@ -19,14 +19,33 @@ import BrushIcon from '@mui/icons-material/Brush';
 // 用 Blob Worker 绕过 Next.js webpack 对 `new Worker(new URL(...))` 的运行时注入
 // （在 classic worker 上下文注入 `_N_E` 等不存在的全局导致 ReferenceError）。
 import { loadModelBytes } from '@/lib/onnx-runtime/model-cache';
-import { ToolWorkbench, SidebarTitle } from '@/components/tools/ToolWorkbench';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+} from '@/components/tools/ToolWorkbench';
+import FlowPill from '@/components/tools/FlowPill';
+import {
+  useFlowInput,
+  makeFlowImage,
+  blobToFlowImage,
+  flowImagesToFiles,
+  type FlowImage,
+} from '@/lib/flow';
 
 type WorkerOutMsg =
   | { type: 'ready' }
   | { type: 'inpaint:done'; id: number; out: ArrayBuffer }
   | { type: 'error'; error: string };
 
-export default function RemoveWatermark() {
+export default function RemoveWatermark({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const canvasWrapRef = React.useRef<HTMLDivElement | null>(null);
   const baseCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -52,6 +71,13 @@ export default function RemoveWatermark() {
   const [brushSize, setBrushSize] = React.useState(40);
   // 前后对比分割线位置（0-100，仅处理后生效）
   const [splitRatio, setSplitRatio] = React.useState(50);
+
+  // 工作流串流出参：下载时把 canvas 结果写入 blob（同时记录宽高），供「继续处理」胶囊使用
+  const [resultBlob, setResultBlob] = React.useState<Blob | null>(null);
+  const [resultSize, setResultSize] = React.useState<{ w: number; h: number } | null>(null);
+  // 资源信息：源文件名与大小（结果大小直接取 resultBlob）
+  const [sourceName, setSourceName] = React.useState('image');
+  const [sourceSize, setSourceSize] = React.useState(0);
 
   // AI 处理状态
   const [running, setRunning] = React.useState(false);
@@ -107,6 +133,8 @@ export default function RemoveWatermark() {
 
   // ───────── 读取文件 ─────────
   const loadFile = (file: File) => {
+    setSourceName(file.name);
+    setSourceSize(file.size);
     const url = URL.createObjectURL(file);
     // 旧原图 URL 在换图时回收
     if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
@@ -130,6 +158,17 @@ export default function RemoveWatermark() {
     loadFile(file);
     e.target.value = '';
   };
+
+  // ───────── 工作流串流摄入（单图工具：只取第一张） ─────────
+  const flowInput = useFlowInput();
+  const flowConsumed = React.useRef(false);
+  React.useEffect(() => {
+    if (flowConsumed.current || !flowInput?.images.length) return;
+    flowConsumed.current = true;
+    // 用 flowImagesToFiles 还原为 File，复用既有文件摄入逻辑
+    loadFile(flowImagesToFiles(flowInput.images)[0]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowInput]);
 
   // ───────── 遮罩层操作 ─────────
   const clearMask = () => {
@@ -386,12 +425,15 @@ export default function RemoveWatermark() {
     };
   }, []);
 
-  // 卸载时回收原图 objectURL
+  // 卸载时回收原图 objectURL。依赖 sourceUrl（state）而非 sourceUrlRef：
+  // StrictMode 双挂载时，首次 mount 的 cleanup 阶段若按 ref 回收，会把工作流摄入
+  // 刚同步创建的 blob URL 提前 revoke，导致图片解码中断、onload 不触发（图片带不过来）。
+  // state 在首次 cleanup 时仍为 null，是空操作；真正加载完成后才按当前 URL 注册回收。
   React.useEffect(() => {
     return () => {
-      if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
+      if (sourceUrl) URL.revokeObjectURL(sourceUrl);
     };
-  }, []);
+  }, [sourceUrl]);
 
   // ───────── AI 修复（基于当前底图继续处理） ─────────
   const handleProcess = async () => {
@@ -509,7 +551,36 @@ export default function RemoveWatermark() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    // 同步写入工作流串流出参：结果 blob + canvas 宽高
+    const w = bc.width;
+    const h = bc.height;
+    bc.toBlob((b) => {
+      if (!b) return;
+      setResultBlob(b);
+      setResultSize({ w, h });
+    }, 'image/png');
   };
+
+  // ───────── 工作流串流出参（「继续处理」胶囊） ─────────
+  // 正常下载已记录宽高，走 makeFlowImage 同步构造；宽高不易取得时退回 blobToFlowImage 异步解码
+  const [fallbackFlowImages, setFallbackFlowImages] = React.useState<FlowImage[]>([]);
+  React.useEffect(() => {
+    if (!resultBlob || resultSize) return;
+    let alive = true;
+    blobToFlowImage(resultBlob, `去水印-${Date.now()}.png`)
+      .then((im) => alive && setFallbackFlowImages([im]))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [resultBlob, resultSize]);
+
+  const flowImages: FlowImage[] = React.useMemo(() => {
+    if (resultBlob && resultSize) {
+      return [makeFlowImage(resultBlob, `去水印-${Date.now()}.png`, resultSize.w, resultSize.h)];
+    }
+    return fallbackFlowImages;
+  }, [resultBlob, resultSize, fallbackFlowImages]);
 
   const showProgress = phase !== 'idle';
   const statusText =
@@ -523,6 +594,8 @@ export default function RemoveWatermark() {
 
   return (
     <ToolWorkbench
+      title={title}
+      description={description}
       hasContent={!!imgSize}
       onPickFile={() => fileInputRef.current?.click()}
       onDrop={(files) => {
@@ -563,45 +636,16 @@ export default function RemoveWatermark() {
             选择图片
             <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFile} />
           </Button>
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 11, mt: 0.5 }}>
-            图片仅在本地处理，不会上传
-          </Typography>
         </Box>
       }
-      sidebar={
-        <Stack spacing={3}>
-          {/* 使用说明 */}
-          <Box>
-            <Typography
-              variant="overline"
-              sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', display: 'block', mb: 1.5 }}
-            >
-              使用说明
-            </Typography>
-            <Stack spacing={2.25}>
-              <Box
-                sx={{
-                  borderRadius: 1,
-                  border: 1,
-                  borderColor: 'divider',
-                  bgcolor: 'rgba(15,61,58,0.04)',
-                  px: 1.25,
-                  py: 1,
-                }}
-              >
-                <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
-                  <Box sx={{ fontSize: 16, color: 'text.secondary', flexShrink: 0, mt: 0.25, display: 'flex' }}>
-                    <AutoFixHighIcon sx={{ fontSize: 16 }} />
-                  </Box>
-                  <Typography variant="body2" sx={{ fontSize: 12, color: 'text.secondary' }}>
-                    用画笔涂抹水印区域（红色覆盖），可拖动滑块调节笔粗，点击「AI 修复」重建。处理后可拖动分割线对比前后效果，也能继续涂抹补充修复或撤销回退。
-                  </Typography>
-                </Stack>
-              </Box>
-            </Stack>
-          </Box>
-
-          {/* 画笔设置（配置项放右栏） */}
+      usage={
+        <TipCard
+          icon={<AutoFixHighIcon sx={{ fontSize: 16 }} />}
+          text="用画笔涂抹水印区域（红色覆盖），可拖动滑块调节笔粗，点击「AI 修复」重建。处理后可拖动分割线对比前后效果，也能继续涂抹补充修复或撤销回退。"
+        />
+      }
+      config={
+        imgSize ? (
           <Box>
             <SidebarTitle>画笔设置</SidebarTitle>
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
@@ -629,8 +673,25 @@ export default function RemoveWatermark() {
               </Typography>
             </Stack>
           </Box>
-        </Stack>
+        ) : undefined
       }
+      resource={
+        imgSize ? (
+          <Box>
+            <SidebarTitle>资源信息</SidebarTitle>
+            <SidebarResourceInfo
+              data={{
+                name: sourceName,
+                before: { size: sourceSize, width: imgSize.w, height: imgSize.h },
+                after: resultBlob
+                  ? { size: resultBlob.size, width: resultSize?.w, height: resultSize?.h }
+                  : undefined,
+              }}
+            />
+          </Box>
+        ) : undefined
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
     >
       {!imgSize ? null : (
         <>
@@ -642,21 +703,23 @@ export default function RemoveWatermark() {
                 // 预览容器：图片等比居中，不固定宽度
                 display: 'flex',
                 justifyContent: 'center',
-                borderRadius: 1,
-                overflow: 'hidden',
-                border: 1,
-                borderColor: 'divider',
-                bgcolor: '#fafaf7',
-                backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-                backgroundSize: '20px 20px',
-                backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
               }}
             >
               {/* 内容区：fit-content = 图片等比显示尺寸，三画布绝对覆盖其上（与图片完全同区域，不错位不变形）。
                   canvasWrapRef 挂在此处：分割线拖动比例基于图片区域计算，不会受外层留白影响 */}
               <Box
                 ref={canvasWrapRef}
-                sx={{ position: 'relative', width: 'fit-content', maxWidth: '100%', maxHeight: 480 }}
+                sx={{
+                  position: 'relative',
+                  width: 'fit-content',
+                  maxWidth: '100%',
+                  maxHeight: 480,
+                  border: '1px dashed',
+                  borderColor: 'divider',
+                  borderRadius: 1,
+                  overflow: 'hidden',
+                  background: '#fff',
+                }}
               >
                 {/* 隐形原图撑开容器，保证画布比例 = 图片比例 */}
                 <img

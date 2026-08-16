@@ -22,6 +22,13 @@ import TextField from '@mui/material/TextField';
 import Chip from '@mui/material/Chip';
 import JSZip from 'jszip';
 import { pdfjs } from 'react-pdf';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+  formatBytes,
+} from '@/components/tools/ToolWorkbench';
 
 // 使用本地 worker（与 PDF 贴图一致）
 pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
@@ -39,12 +46,6 @@ type PageRange = { from: number; to: number };
 type Result =
   | { kind: 'merge'; blob: Blob; name: string; size: number; pages: number }
   | { kind: 'split'; blob: Blob; name: string; size: number; pages: number };
-
-const formatBytes = (n: number): string => {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-};
 
 // pdf-lib save() 返回 Uint8Array<ArrayBufferLike>，Blob 构造需 ArrayBuffer 视图
 const toBlobPart = (bytes: Uint8Array): BlobPart => bytes.slice();
@@ -212,7 +213,13 @@ function SplitPreview({
   );
 }
 
-export default function PdfMerge() {
+export default function PdfMerge({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [mode, setMode] = React.useState<Mode>('merge');
   const [items, setItems] = React.useState<PdfItem[]>([]);
   const [working, setWorking] = React.useState(false);
@@ -373,23 +380,59 @@ export default function PdfMerge() {
   };
 
   return (
-    <Box>
-      {/* 模式切换 */}
-      <ToggleButtonGroup exclusive size="small" value={mode} onChange={onModeChange} sx={{ mb: 2 }}>
-        <ToggleButton value="merge" sx={{ px: 2, fontSize: 13 }}>
-          合并 PDF
-        </ToggleButton>
-        <ToggleButton value="split" sx={{ px: 2, fontSize: 13 }}>
-          拆分 PDF
-        </ToggleButton>
-      </ToggleButtonGroup>
-
-      {/* 上传区：仅在还没有文件时显示，上传后由预览/列表作为主体 */}
-      {items.length === 0 && (
+    <ToolWorkbench
+      title={title}
+      description={description}
+      hasContent={items.length > 0}
+      usage={
+        <TipCard
+          icon={<FolderZipIcon sx={{ fontSize: 16 }} />}
+          text="合并模式把多个 PDF 按顺序拼为一个；拆分模式按页码范围把一个 PDF 拆成多个。"
+        />
+      }
+      config={
+        <Box>
+          <SidebarTitle>模式</SidebarTitle>
+          <ToggleButtonGroup exclusive size="small" fullWidth value={mode} onChange={onModeChange}>
+            <ToggleButton value="merge" sx={{ px: 2, fontSize: 13 }}>
+              合并 PDF
+            </ToggleButton>
+            <ToggleButton value="split" sx={{ px: 2, fontSize: 13 }}>
+              拆分 PDF
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+      }
+      resource={
+        items.length > 0 || result ? (
+          <Box>
+            <SidebarTitle>资源信息</SidebarTitle>
+            <SidebarResourceInfo
+              data={{
+                name: items.length > 0 ? `${items.length} 个 PDF` : undefined,
+                before:
+                  items.length > 0
+                    ? { size: items.reduce((s, it) => s + it.file.size, 0) }
+                    : undefined,
+                after: result ? { size: result.size } : undefined,
+                extra: [
+                  ...(items.length > 0
+                    ? [{ label: '页数', value: `${items.reduce((s, it) => s + it.pages, 0)}` }]
+                    : []),
+                  ...(result
+                    ? [{ label: result.kind === 'merge' ? '合并页数' : '拆分份数', value: `${result.pages}` }]
+                    : []),
+                ],
+              }}
+            />
+          </Box>
+        ) : undefined
+      }
+      emptyState={
         <Box
           sx={{
             width: '100%',
-            minHeight: 160,
+            minHeight: 240,
             borderRadius: 1,
             border: 1,
             borderColor: 'divider',
@@ -423,12 +466,9 @@ export default function PdfMerge() {
               onChange={handleAdd}
             />
           </Button>
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 11 }}>
-            所有处理在浏览器内完成 · 文件不会上传
-          </Typography>
         </Box>
-      )}
-
+      }
+    >
       {/* 文件列表 */}
       {items.length > 0 && (
         <>
@@ -615,6 +655,6 @@ export default function PdfMerge() {
           </Button>
         </Box>
       )}
-    </Box>
+    </ToolWorkbench>
   );
 }

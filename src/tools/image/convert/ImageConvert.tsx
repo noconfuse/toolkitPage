@@ -21,7 +21,15 @@ import ToggleButton from '@mui/material/ToggleButton';
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
 import JSZip from 'jszip';
 import { getMozJpeg } from '../_lib/encoders';
-import { ToolWorkbench } from '@/components/tools/ToolWorkbench';
+import {
+  ToolWorkbench,
+  SidebarTitle,
+  TipCard,
+  SidebarResourceInfo,
+  formatBytes,
+} from '@/components/tools/ToolWorkbench';
+import FlowPill from '@/components/tools/FlowPill';
+import { useFlowInput, flowImagesToFiles, makeFlowImage, type FlowImage } from '@/lib/flow';
 
 type Target = 'png' | 'jpeg' | 'webp';
 
@@ -67,12 +75,6 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     i.src = src;
   });
 
-const formatBytes = (n: number): string => {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
-};
-
 // 解码 → 编码，保持原尺寸；JPG 无透明通道，先填白底
 const encode = async (it: Item, target: Target): Promise<Blob> => {
   const img = await loadImage(it.dataUrl);
@@ -106,7 +108,13 @@ const encode = async (it: Item, target: Target): Promise<Blob> => {
 
 const extOf = (t: Target): string => (t === 'jpeg' ? 'jpg' : t);
 
-export default function ImageConvert() {
+export default function ImageConvert({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
   const [items, setItems] = React.useState<Item[]>([]);
   const [working, setWorking] = React.useState(false);
   const [progress, setProgress] = React.useState<{ total: number; done: number; currentId: string | null } | null>(null);
@@ -139,19 +147,28 @@ export default function ImageConvert() {
     setItems((prev) => [...prev, ...next]);
   };
 
+  // 工作流摄入：?flow= 串流入口，把上游产物的图片一次性注入待转换列表（仅首次生效）
+  const flowInput = useFlowInput();
+  const flowConsumed = React.useRef(false);
+  React.useEffect(() => {
+    if (flowConsumed.current || !flowInput?.images.length) return;
+    flowConsumed.current = true;
+    appendFiles(flowImagesToFiles(flowInput.images));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flowInput]);
+
   const handleAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await appendFiles(Array.from(e.target.files ?? []));
     e.target.value = '';
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files ?? []).filter((f) => SUPPORTED_TYPES[f.type]);
-    if (files.length === 0) {
+  const handleDrop = async (files: FileList | null) => {
+    const list = Array.from(files ?? []).filter((f) => SUPPORTED_TYPES[f.type]);
+    if (list.length === 0) {
       setError('请拖入 PNG / JPG / WebP 图片');
       return;
     }
-    await appendFiles(files);
+    await appendFiles(list);
   };
 
   const removeAt = (id: string) => {
@@ -204,8 +221,9 @@ export default function ImageConvert() {
     setProgress({ total: 1, done: 0, currentId: id });
     const out = await processOne(reset[idx], target);
     if (tokenRef.current !== myToken) return;
-    reset[idx] = out;
-    setItems(reset);
+    // 不能原地改写 reset 再 setItems 同一引用：React 引用相等会跳过重渲染，
+    // items 引用不变导致 flowImages useMemo 不重算，工作流胶囊不显示。
+    setItems(reset.map((it, i) => (i === idx ? out : it)));
     setWorking(false);
     setProgress(null);
   };
@@ -294,14 +312,72 @@ export default function ImageConvert() {
   };
 
   const hasOut = items.some((it) => it.outBlob);
+  const totalOrig = items.reduce((s, it) => s + it.origSize, 0);
+  const totalOut = items.reduce((s, it) => s + (it.outSize ?? 0), 0);
+
+  // 工作流出口：已完成转换的产物构造 FlowImage[]（转换保持原尺寸，直接复用 origWidth/origHeight）
+  const flowImages = React.useMemo<FlowImage[]>(
+    () =>
+      items
+        .filter((it): it is Item & { outBlob: Blob } => !!it.outBlob)
+        .map((it) => {
+          const base = it.name.replace(/\.(png|jpe?g|webp)$/i, '');
+          return makeFlowImage(it.outBlob, `${base}.${extOf(it.outTarget ?? it.kind)}`, it.origWidth, it.origHeight);
+        }),
+    [items],
+  );
+
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   return (
     <ToolWorkbench
+      title={title}
+      description={description}
       hasContent={items.length > 0}
-      onDrop={(files) => {
-        if (files && files.length > 0) handleDrop({ preventDefault: () => {}, dataTransfer: { files } } as unknown as React.DragEvent);
-      }}
+      onDrop={handleDrop}
+      usage={
+        <TipCard
+          icon={<UploadFileIcon />}
+          text="上传 PNG / JPG / WebP 图片，选择目标格式后自动转换，保持原尺寸。"
+        />
+      }
+      config={
+        items.length > 0 ? (
+          <Box>
+            <SidebarTitle>转换目标</SidebarTitle>
+            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
+              全部转换为
+            </Typography>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={null}
+              onChange={(_, v) => v && convertAll(v as Target)}
+            >
+              {ALL_TARGETS.map((t) => (
+                <ToggleButton key={t} value={t} sx={{ px: 2, fontSize: 13 }} disabled={working}>
+                  {LABEL[t]}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Box>
+        ) : undefined
+      }
+      resource={
+        items.length > 0 ? (
+          <Box>
+            <SidebarTitle>资源信息</SidebarTitle>
+            <SidebarResourceInfo
+              data={{
+                name: `${items.length} 张图片`,
+                before: { size: totalOrig },
+                after: hasOut ? { size: totalOut } : undefined,
+              }}
+            />
+          </Box>
+        ) : undefined
+      }
+      flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
       emptyState={
         <Box
           onClick={() => fileInputRef.current?.click()}
@@ -344,36 +420,11 @@ export default function ImageConvert() {
             />
           </Button>
           <Typography variant="caption" sx={{ color: 'text.disabled', fontSize: 11, mt: 0.5 }}>
-            所有处理在浏览器内完成 · 保持原尺寸
+            保持原尺寸
           </Typography>
         </Box>
       }
     >
-      {/* 全部转换快捷操作 */}
-      {items.length > 0 && (
-        <Stack
-          direction={{ xs: 'column', sm: 'row' }}
-          spacing={1.5}
-          sx={{ mb: 2, alignItems: { xs: 'stretch', sm: 'center' } }}
-        >
-          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, flexShrink: 0 }}>
-            全部转换为
-          </Typography>
-          <ToggleButtonGroup
-            exclusive
-            size="small"
-            value={null}
-            onChange={(_, v) => v && convertAll(v as Target)}
-          >
-            {ALL_TARGETS.map((t) => (
-              <ToggleButton key={t} value={t} sx={{ px: 2, fontSize: 13 }} disabled={working}>
-                {LABEL[t]}
-              </ToggleButton>
-            ))}
-          </ToggleButtonGroup>
-        </Stack>
-      )}
-
       <Stack spacing={1.5}>
         {items.map((it) => (
             <Box
@@ -518,6 +569,8 @@ export default function ImageConvert() {
           </Button>
         </Stack>
       )}
+
+      {/* 工作流串流出口已迁移到右侧栏底部（flow prop） */}
 
       {working && progress && progress.total > 1 && (
         <Box sx={{ mt: 1.5 }}>
