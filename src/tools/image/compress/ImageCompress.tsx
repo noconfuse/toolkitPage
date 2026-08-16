@@ -29,6 +29,9 @@ import {
   TipCard,
   SidebarResourceInfo,
   formatBytes,
+  dropzoneBg,
+  dropzoneBgSize,
+  dropzoneBgPos,
 } from '@/components/tools/ToolWorkbench';
 import FlowPill from '@/components/tools/FlowPill';
 import LibImageQuant from 'libimagequant-wasm';
@@ -324,28 +327,23 @@ export default function ImageCompress({
     }
   };
 
-  // 质量已固定为最佳实践，无需自动重压
-
   // 卸载时释放 url
   React.useEffect(() => {
     return () => {
-      items.forEach((it) => it.outUrl && URL.revokeObjectURL(it.outUrl));
+      itemsRef.current.forEach((it) => it.outUrl && URL.revokeObjectURL(it.outUrl));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const downloadOne = (it: Item) => {
-    if (!it.done || !it.outBlob) return;
-    const url = it.outUrl ?? URL.createObjectURL(it.outBlob);
+    if (!it.done || !it.outUrl) return;
     const ext = extOf(it.name, it.kind);
     const base = it.name.replace(/\.(png|jpe?g|webp)$/i, '');
     const a = document.createElement('a');
-    a.href = url;
+    a.href = it.outUrl;
     a.download = `${base}.${ext}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    if (!it.outUrl) URL.revokeObjectURL(url);
   };
 
   // 全部打包为一个 ZIP 下载；同名文件自动加序号，避免覆盖
@@ -447,9 +445,9 @@ export default function ImageCompress({
             border: 1,
             borderColor: 'divider',
             bgcolor: '#fafaf7',
-            backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+            backgroundImage: dropzoneBg,
+            backgroundSize: dropzoneBgSize,
+            backgroundPosition: dropzoneBgPos,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -459,7 +457,6 @@ export default function ImageCompress({
             cursor: 'pointer',
           }}
         >
-          <Box sx={{ fontSize: 36, opacity: 0.5 }} />
           <Typography variant="body2">上传 PNG / JPG / WebP 开始压缩</Typography>
           <Button
             variant="contained"
@@ -759,8 +756,6 @@ export default function ImageCompress({
             </Button>
           </Stack>
         )}
-
-        {/* 结果态串流出口已迁移到右侧栏底部（flow prop） */}
     </ToolWorkbench>
   );
 }

@@ -24,6 +24,9 @@ import {
   SidebarTitle,
   TipCard,
   SidebarResourceInfo,
+  dropzoneBg,
+  dropzoneBgSize,
+  dropzoneBgPos,
 } from '@/components/tools/ToolWorkbench';
 import FlowPill from '@/components/tools/FlowPill';
 import {
@@ -65,7 +68,6 @@ export default function RemoveWatermark({
   const [imgSize, setImgSize] = React.useState<{ w: number; h: number } | null>(null);
   // 原图 objectURL：仅用于撑开预览容器（隐形 img 等比撑开，canvas 覆盖其上，保证三画布与图片同比例、不错位）
   const [sourceUrl, setSourceUrl] = React.useState<string | null>(null);
-  const sourceUrlRef = React.useRef<string | null>(null);
   const [hasMask, setHasMask] = React.useState(false);
   const [isProcessed, setIsProcessed] = React.useState(false);
   const [brushSize, setBrushSize] = React.useState(40);
@@ -136,9 +138,6 @@ export default function RemoveWatermark({
     setSourceName(file.name);
     setSourceSize(file.size);
     const url = URL.createObjectURL(file);
-    // 旧原图 URL 在换图时回收
-    if (sourceUrlRef.current) URL.revokeObjectURL(sourceUrlRef.current);
-    sourceUrlRef.current = url;
     const img = new Image();
     img.onload = () => {
       const w = img.naturalWidth;
@@ -347,21 +346,6 @@ export default function RemoveWatermark({
       }
     };
     w.onerror = (e) => {
-      // 调试：把所有 ErrorEvent 字段都 console 出来，让我们能直接看到 raw 信息
-      // eslint-disable-next-line no-console
-      console.error('[WORKER ONERROR raw]', {
-        message: e.message,
-        filename: e.filename,
-        lineno: e.lineno,
-        colno: e.colno,
-        errorType: typeof e.error,
-        errorIsError: e.error instanceof Error,
-        errorMessage: e.error instanceof Error ? e.error.message : String(e.error),
-        errorStack: e.error instanceof Error ? e.error.stack : null,
-        isTrusted: e.isTrusted,
-        timeStamp: e.timeStamp,
-        type: e.type,
-      });
       e.preventDefault();
       const initReject = initRejectRef.current;
       const pending = pendingInpaintRef.current;
@@ -369,12 +353,7 @@ export default function RemoveWatermark({
       const wrapped = new Error(
         e.error instanceof Error
           ? `${e.error.message}\n${e.error.stack ?? ''}`
-          : e.message || e.filename || `Worker onerror (no detail). raw=${JSON.stringify({
-              message: e.message,
-              filename: e.filename,
-              lineno: e.lineno,
-              errorType: typeof e.error,
-            })}`,
+          : e.message || e.filename || 'Worker onerror (no detail)',
       );
       initRejectRef.current = null;
       pendingInpaintRef.current = null;
@@ -425,7 +404,7 @@ export default function RemoveWatermark({
     };
   }, []);
 
-  // 卸载时回收原图 objectURL。依赖 sourceUrl（state）而非 sourceUrlRef：
+  // 卸载时回收原图 objectURL。依赖 sourceUrl（state）而非 ref：
   // StrictMode 双挂载时，首次 mount 的 cleanup 阶段若按 ref 回收，会把工作流摄入
   // 刚同步创建的 blob URL 提前 revoke，导致图片解码中断、onload 不触发（图片带不过来）。
   // state 在首次 cleanup 时仍为 null，是空操作；真正加载完成后才按当前 URL 注册回收。
@@ -612,9 +591,9 @@ export default function RemoveWatermark({
             border: 1,
             borderColor: 'divider',
             bgcolor: '#fafaf7',
-            backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+            backgroundImage: dropzoneBg,
+            backgroundSize: dropzoneBgSize,
+            backgroundPosition: dropzoneBgPos,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',

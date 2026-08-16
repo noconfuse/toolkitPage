@@ -31,7 +31,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 // - config：侧边栏第一节「配置参数」（有才显示）
 // - resource：侧边栏第二节「资源信息」（大小与尺寸，处理前 / 后）
 // - flow：侧边栏底部「工作流胶囊」（显眼）
-// - emptyState / onPickFile / onDrop / dragOver：空状态与拖拽上传
+// - emptyState / onPickFile / onDrop：空状态与拖拽上传
 
 export interface ToolWorkbenchTip {
   icon: React.ReactNode;
@@ -64,16 +64,14 @@ export interface ToolWorkbenchProps {
   onPickFile?: () => void;
   /** 拖拽上传处理 */
   onDrop?: (files: FileList | null) => void;
-  /** 是否处于拖拽悬停态（控制外框虚线高亮） */
-  dragOver?: boolean;
   /** 右栏宽度（默认 300） */
   sidebarWidth?: number;
 }
 
-// 跟去水印工具一致的对角线棋盘格背景（空状态 Dropzone 用）
-const dropzoneBg = `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`;
-const dropzoneBgSize = '20px 20px';
-const dropzoneBgPos = '0 0, 0 10px, 10px -10px, 10px 0px';
+// 跟去水印工具一致的对角线棋盘格背景（空状态 Dropzone 用；工具自定义空状态同样引用）
+export const dropzoneBg = `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`;
+export const dropzoneBgSize = '20px 20px';
+export const dropzoneBgPos = '0 0, 0 10px, 10px -10px, 10px 0px';
 
 // 左右两栏统一内边距（不用太大；移动端稍小）
 const COLUMN_PAD = { px: { xs: 2, md: 3 }, py: { xs: 3, md: 4 } };
@@ -97,13 +95,11 @@ export function ToolWorkbench({
   emptyState,
   onPickFile,
   onDrop,
-  dragOver = false,
 }: ToolWorkbenchProps) {
-  // 拖拽高亮由组件自管理（所有工具统一，无需各自维护 dragOver 状态）；
-  // dragOver prop 仅作外部强制覆盖（传 true 时恒亮）。
+  // 拖拽高亮由组件自管理（enter/leave 计数法避免经过子元素时闪断）
   const [dragActive, setDragActive] = React.useState(false);
   const dragDepth = React.useRef(0);
-  const showDrag = dragOver ?? dragActive;
+  const showDrag = dragActive;
 
   // 整个外壳统一处理拖拽上传（enter/leave 用计数法，避免经过子元素时高亮闪断）
   const handleDragEnter = (e: React.DragEvent) => {

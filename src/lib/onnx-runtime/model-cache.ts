@@ -44,27 +44,13 @@ const putCached = async (key: string, buf: ArrayBuffer): Promise<void> => {
 
 export const cacheKey = (version: string, url: string) => `${version}::${url}`;
 
-/** 读取模型 ArrayBuffer：优先 IndexedDB，没有则 fetch 并写入。 */
+/** 读取 MIGAN 模型 ArrayBuffer：优先 IndexedDB，没有则 fetch 并写入。 */
 export async function loadModelBytes(
-  urlOrOnProgress: string | ((p: number) => void),
-  versionOrUrl?: string | ((p: number) => void),
   onProgress?: (p: number) => void,
 ): Promise<ArrayBuffer> {
-  // 兼容旧调用：loadModelBytes(onProgress) — 用默认 MIGAN 模型
-  // 新调用：loadModelBytes(url, version, onProgress)
-  let url: string;
-  let version: string;
-  let progress: ((p: number) => void) | undefined;
-  if (typeof urlOrOnProgress === 'function') {
-    // 旧签名：loadModelBytes(onProgress)
-    url = process.env.NEXT_PUBLIC_MIGAN_MODEL_URL || '/models/migan_pipeline_v2.onnx';
-    version = 'migan-pipeline-v2';
-    progress = urlOrOnProgress;
-  } else {
-    url = urlOrOnProgress;
-    version = (versionOrUrl as string) ?? 'default';
-    progress = onProgress;
-  }
+  const url = process.env.NEXT_PUBLIC_MIGAN_MODEL_URL || '/models/migan_pipeline_v2.onnx';
+  const version = 'migan-pipeline-v2';
+  const progress = onProgress;
 
   const key = cacheKey(version, url);
   const cached = await getCached(key).catch(() => null);

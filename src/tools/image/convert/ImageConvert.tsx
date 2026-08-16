@@ -27,6 +27,9 @@ import {
   TipCard,
   SidebarResourceInfo,
   formatBytes,
+  dropzoneBg,
+  dropzoneBgSize,
+  dropzoneBgPos,
 } from '@/components/tools/ToolWorkbench';
 import FlowPill from '@/components/tools/FlowPill';
 import { useFlowInput, flowImagesToFiles, makeFlowImage, type FlowImage } from '@/lib/flow';
@@ -266,22 +269,19 @@ export default function ImageConvert({
 
   React.useEffect(() => {
     return () => {
-      items.forEach((it) => it.outUrl && URL.revokeObjectURL(it.outUrl));
+      itemsRef.current.forEach((it) => it.outUrl && URL.revokeObjectURL(it.outUrl));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const downloadOne = (it: Item) => {
-    if (!it.done || !it.outBlob) return;
-    const url = it.outUrl ?? URL.createObjectURL(it.outBlob);
+    if (!it.done || !it.outUrl) return;
     const base = it.name.replace(/\.(png|jpe?g|webp)$/i, '');
     const a = document.createElement('a');
-    a.href = url;
+    a.href = it.outUrl;
     a.download = `${base}.${extOf(it.outTarget ?? it.kind)}`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    if (!it.outUrl) URL.revokeObjectURL(url);
   };
 
   const downloadAll = async () => {
@@ -388,9 +388,9 @@ export default function ImageConvert({
             border: 1,
             borderColor: 'divider',
             bgcolor: '#fafaf7',
-            backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+            backgroundImage: dropzoneBg,
+            backgroundSize: dropzoneBgSize,
+            backgroundPosition: dropzoneBgPos,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -487,7 +487,7 @@ export default function ImageConvert({
                     size="small"
                     value={it.outTarget ?? null}
                     onChange={(_, v) => v && convertOne(it.id, v as Target)}
-                    disabled={working || (it.failed && false)}
+                    disabled={working}
                   >
                     {ALL_TARGETS.filter((t) => t !== it.kind).map((t) => (
                       <ToggleButton key={t} value={t} sx={{ px: 1.5, fontSize: 12 }}>

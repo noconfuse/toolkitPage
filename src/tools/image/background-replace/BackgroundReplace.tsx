@@ -18,6 +18,9 @@ import {
   TipCard,
   SidebarResourceInfo,
   type ResourceInfoData,
+  dropzoneBg,
+  dropzoneBgSize,
+  dropzoneBgPos,
 } from '@/components/tools/ToolWorkbench';
 import FlowPill from '@/components/tools/FlowPill';
 import { useFlowInput, makeFlowImage, blobToFlowImage, flowImagesToFiles, type FlowImage } from '@/lib/flow';
@@ -304,9 +307,9 @@ export default function BackgroundReplace({
             border: 1,
             borderColor: 'divider',
             bgcolor: '#fafaf7',
-            backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
-            backgroundSize: '20px 20px',
-            backgroundPosition: '0 0, 0 10px, 10px -10px, 10px 0px',
+            backgroundImage: dropzoneBg,
+            backgroundSize: dropzoneBgSize,
+            backgroundPosition: dropzoneBgPos,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -422,8 +425,6 @@ export default function BackgroundReplace({
           下载
         </Button>
       </Stack>
-
-      {/* 工作流串流出口已迁移到右侧栏底部（flow prop） */}
     </ToolWorkbench>
   );
 }

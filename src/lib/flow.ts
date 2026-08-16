@@ -29,7 +29,6 @@ export type FlowImage = {
 
 export type FlowContext = {
   images: FlowImage[];
-  activeId: string | null;
 };
 
 type FlowEntry = { ctx: FlowContext; createdAt: number };
@@ -98,7 +97,7 @@ export function blobToFlowImage(blob: Blob, name: string): Promise<FlowImage> {
 export function createFlow(images: FlowImage[]): string {
   prune();
   const id = makeId();
-  store.set(id, { ctx: { images, activeId: images[0]?.id ?? null }, createdAt: Date.now() });
+  store.set(id, { ctx: { images }, createdAt: Date.now() });
   return id;
 }
 

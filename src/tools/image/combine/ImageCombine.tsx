@@ -74,30 +74,6 @@ const MODE_PRESETS: ReadonlyArray<{
 
 const HIT_SIZE = 12; // px，旋转后的屏幕坐标
 
-// 圆角矩形路径（手动 arcTo 实现，兼容无 ctx.roundRect 的旧环境）
-const roundedRectPath = (
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number,
-) => {
-  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.lineTo(x + w - rr, y);
-  ctx.arcTo(x + w, y, x + w, y + rr, rr);
-  ctx.lineTo(x + w, y + h - rr);
-  ctx.arcTo(x + w, y + h, x + w - rr, y + h, rr);
-  ctx.lineTo(x + rr, y + h);
-  ctx.arcTo(x, y + h, x, y + h - rr, rr);
-  ctx.lineTo(x, y + rr);
-  ctx.arcTo(x, y, x + rr, y, rr);
-  ctx.closePath();
-  return ctx;
-};
-
 // 吸附对齐：移动时贴近其他图层（边缘/中心）或画布（边缘/中心）自动吸附并显示高亮线
 const SNAP_TOL = 8; // 吸附阈值（屏幕像素，换算画布像素时除以 scale）
 type SnapLine = { axis: 'v' | 'h'; pos: number };
@@ -180,7 +156,8 @@ export default function ImageCombine({
         // 图片：圆角路径裁剪后绘制
         ctx.save();
         ctx.globalCompositeOperation = layer.mode;
-        roundedRectPath(ctx, -layer.w / 2, -layer.h / 2, layer.w, layer.h, layer.radius);
+        ctx.beginPath();
+        ctx.roundRect(-layer.w / 2, -layer.h / 2, layer.w, layer.h, layer.radius);
         ctx.clip();
         ctx.drawImage(layer.img, -layer.w / 2, -layer.h / 2, layer.w, layer.h);
         ctx.restore();
