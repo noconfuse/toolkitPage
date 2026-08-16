@@ -64,12 +64,14 @@ const MODE_PRESETS: ReadonlyArray<{
   desc: string;
 }> = [
   { v: 'source-over', label: '默认', desc: '直接覆盖在底图上（最常用）' },
-  { v: 'source-atop', label: '局部', desc: '图层只在与底图重叠处显示，超出底图的部分被裁剪' },
-  { v: 'lighter', label: '加亮', desc: '叠加区域颜色变亮，适合光效、高光' },
-  { v: 'source-in', label: '剪贴', desc: '只保留图层与底图重叠的部分，底图该区域被图层替代' },
-  { v: 'source-out', label: '反剪', desc: '只保留图层落在底图之外的部分（重叠处被挖掉）' },
-  { v: 'destination-out', label: '擦除', desc: '把底图上被图层盖住的部分擦成透明，图层本身不显示' },
-  { v: 'xor', label: '挖空', desc: '图层与底图重叠处挖空透出背景，不重叠的部分都保留' },
+  { v: 'source-atop', label: '局部', desc: '图层只在与底图重叠处显示，超出部分被裁剪，适合贴在底图形状内' },
+  { v: 'lighter', label: '加亮', desc: '叠加区域整体变亮，适合光斑、高光、星光' },
+  { v: 'screen', label: '滤色', desc: '保留底图亮部、黑色区域不变，整体变亮，适合发光、柔和光效' },
+  { v: 'multiply', label: '正片叠底', desc: '保留底图暗部、白色区域不变，整体变暗，适合叠纹理、布料/纸张质感' },
+  { v: 'source-in', label: '剪贴', desc: '只保留图层与底图重叠的部分，把内容装进底图形状 = 剪贴蒙版' },
+  { v: 'source-out', label: '反剪', desc: '重叠处只保留底图，图层仅显示在底图之外' },
+  { v: 'destination-out', label: '擦除', desc: '把底图上被图层盖住的部分擦成透明（手动抠图的橡皮擦），图层本身不显示' },
+  { v: 'xor', label: '挖空', desc: '重叠处图层与底图都消失、透出背景，不重叠的部分都保留（镂空）' },
 ];
 
 const HIT_SIZE = 12; // px，旋转后的屏幕坐标

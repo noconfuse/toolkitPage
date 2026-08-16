@@ -208,6 +208,48 @@ export const TOOLS: ReadonlyArray<Tool> = [
     ],
   },
   {
+    id: 'image-resize',
+    categoryId: 'image',
+    title: '图片调整大小',
+    shortTitle: '调整大小',
+    href: '/tools/image/resize',
+    flow: { input: 'multi', output: 'multi' },
+    description: '批量调整图片尺寸，支持百分比、按宽、按高或指定宽高，保持原格式。',
+    longDescription:
+      '在线图片调整大小工具：批量上传 PNG / JPG / WebP 图片，按百分比、目标宽度、目标高度或指定宽高调整尺寸。百分比、按宽、按高保持宽高比，调整即时生效，保持原格式。',
+    icon: <CropIcon />,
+    available: true,
+    keywords: [
+      '图片调整大小',
+      '图片缩放',
+      '修改图片尺寸',
+      '图片尺寸',
+      '图片宽高',
+      '图片放大',
+      '图片缩小',
+      '图片改大小',
+      '批量缩放',
+    ],
+    faq: [
+      {
+        q: '图片会上传到服务器吗？',
+        a: '不会，所有缩放都在你的浏览器内使用 Canvas 完成，文件不会离开你的设备。',
+      },
+      {
+        q: '会改变图片格式吗？',
+        a: '保持原格式：PNG 输出 PNG，JPG 输出 JPG，WebP 输出 WebP。',
+      },
+      {
+        q: '放大图片会变模糊吗？',
+        a: '放大时使用浏览器高质采样（imageSmoothingQuality: high）重新采样，比普通拉伸更平滑，但超出原始分辨率的细节无法凭空生成，建议尽量在原始分辨率范围内使用。',
+      },
+      {
+        q: '宽高模式会变形吗？',
+        a: '「宽高」按你填写的宽高直接拉伸，比例与原图不一致时画面会变形；想保持比例请用百分比、按宽或按高。',
+      },
+    ],
+  },
+  {
     id: 'image-convert',
     categoryId: 'image',
     title: '图片格式转换',

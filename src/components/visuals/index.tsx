@@ -149,6 +149,20 @@ export function ThumbImageCompress(props: SvgProps) {
   );
 }
 
+export function ThumbImageResize(props: SvgProps) {
+  return (
+    <svg {...baseSvgProps} {...strokeProps} {...props}>
+      {/* 原图框 + 内容 */}
+      <rect x="12" y="24" width="46" height="52" rx="3" />
+      <path d="M20 38 L32 50 L40 44 L48 58" opacity="0.35" />
+      <circle cx="40" cy="33" r="3" opacity="0.5" />
+      {/* 缩放后的框 + 扩大箭头 */}
+      <rect x="46" y="42" width="42" height="38" rx="2" opacity="0.4" />
+      <path d="M60 66 L78 66 M68 58 L78 66 L68 74" />
+    </svg>
+  );
+}
+
 export function ThumbImageConvert(props: SvgProps) {
   return (
     <svg {...baseSvgProps} {...strokeProps} {...props}>
