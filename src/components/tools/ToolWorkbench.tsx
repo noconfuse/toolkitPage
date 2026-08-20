@@ -9,28 +9,32 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 // 工具页面通用工作区骨架（所有工具页面统一使用）。
 //
-// 视觉构成：
+// 统一的布局约束（见 AGENTS.md）：
 // ┌─ 外壳（可拖拽上传）────────────────────────────────────────┐
 // │ ┌─ 左主区（flex:1，独立 padding）──────────┐┌─ 右栏（常驻）──┐ │
-// │ │  工具标题 + 描述 ⓘ使用说明 ││  ① 配置参数（有才显示）│ │
-// │ │  媒体资源（画布 / 列表 / 空状态）          ││  ② 资源信息（大小/尺寸，处理前/后）│ │
-// │ │  进度条（处理阶段）                       ││  ③ 工作流胶囊（显眼） │ │
-// │ │  功能按钮行                              ││                  │ │
+// │ │  工具标题 + 描述 ⓘ help 提示 ││  ① 配置属性面板（表单控件）│ │
+// │ │  资源操作区（flex:1 占满剩余空间）       ││  ② 资源信息（大小/尺寸，处理前/后）│ │
+// │ │  （画布 / 列表 / 空状态）                ││  ③ 工作流胶囊（需要时）│ │
+// │ │  处理进度条（处理阶段）                  ││                  │ │
+// │ │  功能按钮行（贴底）                      ││                  │ │
 // │ └─────────────────────────────────────────┘└──────────────────┘ │
 // └────────────────────────────────────────────────────────────────┘
 //
-// 右栏常驻：无论是否上传内容都渲染（空状态显示"尚未上传资源"占位），
-// 左右两栏用竖向分割线隔开（移动端折叠为上下排列）。
+// 左主区是 flex column：头部固定，资源操作区 flex:1 占满剩余空间，
+// 进度条 + 功能按钮行（actions）固定在底部——内容不足一屏时按钮栏也贴在
+// 底部，不会浮在页面中间。右栏常驻：无论是否上传内容都渲染（空状态显示
+// "尚未上传资源"占位），左右两栏用竖向分割线隔开（移动端折叠为上下排列）。
 // 左右两栏 padding 保持一致（用户要求：中间区域 padding 与侧边栏一致，不用太大）。
 //
 // 调用方只需传：
 // - title / description：工具标题与描述（渲染在主区头部，替代页面内联标题）
 // - hasContent：是否已上传（决定主区显示空状态还是 children）
-// - children：左主区内容
-// - usage：主区头部右侧「使用说明 / 快捷键」（与标题/描述并排，常驻）
-// - config：侧边栏第一节「配置参数」（有才显示）
-// - resource：侧边栏第二节「资源信息」（大小与尺寸，处理前 / 后）
-// - flow：侧边栏底部「工作流胶囊」（显眼）
+// - children：左主区「资源操作区」内容
+// - usage：主区头部右侧「使用说明 / 快捷键」help 提示（与标题/描述并排，常驻）
+// - actions：左主区底部操作栏（处理进度条 + 功能按钮行，固定在内容区下方）
+// - config：右栏「配置属性面板」（有才显示）
+// - resource：右栏「资源信息」（大小与尺寸，处理前 / 后）
+// - flow：右栏底部「工作流胶囊」（显眼）
 // - emptyState / onPickFile / onDrop：空状态与拖拽上传
 
 export interface ToolWorkbenchTip {
@@ -49,6 +53,8 @@ export interface ToolWorkbenchProps {
   children: React.ReactNode;
   /** 主区头部右侧：使用说明 / 快捷键（与标题/描述并排，常驻） */
   usage?: React.ReactNode;
+  /** 左主区底部操作栏：处理进度条 + 功能按钮行（固定在资源操作区下方贴底） */
+  actions?: React.ReactNode;
   /** 侧边栏第一节：工具配置参数（有才显示） */
   config?: React.ReactNode;
   /** 侧边栏第二节：资源信息（大小与尺寸，处理前 / 后） */
@@ -76,6 +82,40 @@ export const dropzoneBgPos = '0 0, 0 10px, 10px -10px, 10px 0px';
 // 左右两栏统一内边距（不用太大；移动端稍小）
 const COLUMN_PAD = { px: { xs: 2, md: 3 }, py: { xs: 3, md: 4 } };
 
+// 等比例撑满容器：给定内容宽高比，实时返回容器内可容纳的最大等比尺寸（contain-fit）。
+// 用于画布 / 图片预览：资源操作区 flex:1 后，预览内容能自适应放大填满区域，而不是
+// 固定小尺寸（如 maxHeight: 480）在中间留下大片空白。返回 [容器 ref, 尺寸]。
+// - 容器：需要 flex:1 且内部用 alignItems/justifyContent: center 居中
+// - 内容：width/height 取返回值，画布/遮罩层用 inset:0 + width/height:100% 贴合
+export function useContainSize(
+  ratioW: number,
+  ratioH: number,
+  enabled = true,
+): [React.RefObject<HTMLDivElement | null>, { w: number; h: number } | null] {
+  const boxRef = React.useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = React.useState<{ w: number; h: number } | null>(null);
+
+  React.useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el || !enabled || ratioW <= 0 || ratioH <= 0) {
+      setSize(null);
+      return;
+    }
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const s = Math.min(rect.width / ratioW, rect.height / ratioH);
+      setSize({ w: Math.round(ratioW * s), h: Math.round(ratioH * s) });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [ratioW, ratioH, enabled]);
+
+  return [boxRef, size];
+}
+
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -88,6 +128,7 @@ export function ToolWorkbench({
   hasContent,
   children,
   usage,
+  actions,
   config,
   resource,
   flow,
@@ -137,14 +178,25 @@ export function ToolWorkbench({
       onDrop={handleDrop}
       sx={{
         position: 'relative',
-        // 外壳是页根（flex column）的子项，flex:1 拉满与左侧菜单同高；
-        // 外壳自身再转成 flex column，让内部两栏容器（flex:1）继承外壳高度，
-        // 侧边栏因此能随 borderLeft 竖线延伸到外壳底部。
+        // 外壳是页根（flex column）的子项；自身再转成 flex column，把高度传给
+        // 内部两栏容器（flex:1），侧边栏因此能随 borderLeft 竖线延伸到外壳底部。
+        //
+        // lg 起用「确定高度」把外壳钉死在视口内（视口 - 导航栏 56px，与
+        // tools/layout 的 minHeight 一致）：
+        //   - flex: none（flex-basis auto）→ 主尺寸完全由 height 属性决定。
+        //     不能写 flex: 1：flex-basis: 0% 会参与百分比解析，auto 高度容器里
+        //     会把 height 覆盖掉，高度退回内容驱动 → 大图把整页撑高、贴底 actions
+        //     被顶出视口。
+        //   - overflow: hidden → 硬性兜底，内部内容无论如何都不能把外壳撑高，
+        //     超出的在内部被裁剪（需要滚动的工具各自带 overflowY:auto）。
+        // 移动端保持 auto + visible：右栏折叠到左栏下方后随内容自然滚动。
         display: 'flex',
         flexDirection: 'column',
         borderRadius: 1,
-        flex: 1,
+        flex: { xs: 1, lg: 'none' },
         minHeight: 0,
+        height: { xs: 'auto', lg: 'calc(100vh - 56px)' },
+        overflow: { xs: 'visible', lg: 'hidden' },
         outline: showDrag ? '2px dashed' : '2px dashed transparent',
         outlineColor: showDrag ? 'primary.main' : 'transparent',
         outlineOffset: showDrag ? -2 : 0,
@@ -159,8 +211,17 @@ export function ToolWorkbench({
           alignItems: 'stretch',
         }}
       >
-        {/* ───────── 左主区：头部（标题/描述 + 使用说明 tooltip）→ 内容 ───────── */}
-        <Box sx={{ flex: 1, minWidth: 0, width: '100%', ...COLUMN_PAD }}>
+        {/* ───────── 左主区：头部（标题/描述 + help tooltip）→ 资源操作区 → 进度条+功能按钮 ───────── */}
+        <Box
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            width: '100%',
+            ...COLUMN_PAD,
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <Box
             sx={{
               display: 'flex',
@@ -244,18 +305,24 @@ export function ToolWorkbench({
             )}
           </Box>
 
-          {!hasContent ? (
-            emptyState ? (
-              emptyState
+          {/* 资源操作区：flex:1 占满左栏剩余空间，功能按钮行因此始终贴底 */}
+          <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            {!hasContent ? (
+              emptyState ? (
+                emptyState
+              ) : (
+                <DefaultDropzone onPickFile={onPickFile} />
+              )
             ) : (
-              <DefaultDropzone onPickFile={onPickFile} />
-            )
-          ) : (
-            children
-          )}
+              children
+            )}
+          </Box>
+
+          {/* 处理进度条 + 功能按钮栏：固定在底部（不随内容不足而上浮） */}
+          {actions && <Box sx={{ mt: 2.5, flexShrink: 0 }}>{actions}</Box>}
         </Box>
 
-        {/* ───────── 右栏：常驻。配置 → 资源 → 工作流 ───────── */}
+        {/* ───────── 右栏：常驻。配置属性面板 → 资源信息 → 工作流 ───────── */}
         <Box
           sx={{
             width: { xs: '100%', lg: sidebarWidth },
@@ -277,15 +344,16 @@ export function ToolWorkbench({
         >
           {config || resource || flow ? (
             <>
-              {/* 使用说明已移至主区头部 tooltip；首个可见区块不加顶部分割线 */}
-              {config && <Box>{config}</Box>}
-              {resource && (config ? <SidebarSection>{resource}</SidebarSection> : <Box>{resource}</Box>)}
-              {flow &&
-                (config || resource ? (
-                  <SidebarSection>{flow}</SidebarSection>
-                ) : (
-                  <Box>{flow}</Box>
-                ))}
+              {/* 首个可见区块不加顶部分割线，其余区块用细分隔线隔开 */}
+              {[config, resource, flow]
+                .filter(Boolean)
+                .map((node, i) =>
+                  i === 0 ? (
+                    <Box key={i}>{node}</Box>
+                  ) : (
+                    <SidebarSection key={i}>{node}</SidebarSection>
+                  ),
+                )}
             </>
           ) : (
             // 空状态占位：右栏常驻（边框线不消失），未上传时统一显示资源信息空态

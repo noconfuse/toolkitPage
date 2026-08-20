@@ -35,6 +35,7 @@ import {
   TipCard,
   SidebarResourceInfo,
   formatBytes,
+  useContainSize,
   dropzoneBg,
   dropzoneBgSize,
   dropzoneBgPos,
@@ -303,6 +304,13 @@ export default function WatermarkTool({
 
   const selectedItem = items.find((x) => x.id === selectedId) ?? null;
 
+  // 预览撑满：按当前选中图宽高比 contain-fit 自适应容器
+  const [fitRef, fitSize] = useContainSize(
+    selectedItem?.origWidth ?? 0,
+    selectedItem?.origHeight ?? 0,
+    !!selectedItem,
+  );
+
   // ───────── 文件添加 ─────────
   const appendFiles = async (files: File[]) => {
     const accepted = files.filter((f) => f.type.startsWith('image/'));
@@ -322,6 +330,7 @@ export default function WatermarkTool({
         cfg: { ...DEFAULT_CONFIG },
       });
     }
+    // 不限数量：预览与导出循环都是逐个顺序执行（天然分批），CPU 不会被打满
     setItems((prev) => [...prev, ...next]);
     setSelectedId((cur) => cur ?? next[0]?.id ?? null);
     // 预生成预览，保证首次切换秒开
@@ -836,6 +845,66 @@ export default function WatermarkTool({
         />
       }
       flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      actions={
+        <Stack spacing={1}>
+          {working && progress && (
+            <Box>
+              <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
+                  正在导出…
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
+                >
+                  {progress.done}/{progress.total}
+                </Typography>
+              </Stack>
+              <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
+            </Box>
+          )}
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+              继续添加
+              <input type="file" accept="image/*" multiple hidden onChange={handleAdd} />
+            </Button>
+            <Button
+              variant="text"
+              size="small"
+              color="inherit"
+              startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
+              onClick={clearAll}
+              disabled={items.length === 0}
+              sx={{ color: 'text.secondary' }}
+            >
+              清空
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />}
+              onClick={applyToAll}
+              disabled={!selectedItem || items.length < 2}
+              sx={{ textTransform: 'none' }}
+            >
+              将此配置应用到全部图片
+            </Button>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}>
+              {items.length} 张 · {formatBytes(totalSize)}
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => void downloadAll()}
+              disabled={!hasOut || working}
+              startIcon={<FolderZipIcon sx={{ fontSize: 16 }} />}
+            >
+              打包 ZIP
+            </Button>
+          </Stack>
+        </Stack>
+      }
       emptyState={
         <Box
           sx={{
@@ -876,13 +945,17 @@ export default function WatermarkTool({
     >
       {/* ───────── 主区：预览 + 缩略图 + 工具栏 ───────── */}
             <Box
+              ref={fitRef}
               onPointerDown={onPreviewPointerDown}
               sx={{
                 position: 'relative',
+                flex: 1,
+                minHeight: 0,
+                minWidth: 0,
+                width: '100%',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                minHeight: 340,
                 cursor: dragging ? 'grabbing' : selectedItem ? 'grab' : 'default',
                 touchAction: 'none',
               }}
@@ -890,9 +963,8 @@ export default function WatermarkTool({
               <Box
                 sx={{
                   position: 'relative',
-                  width: 'fit-content',
-                  maxWidth: '100%',
-                  maxHeight: 480,
+                  width: fitSize ? fitSize.w : '100%',
+                  height: fitSize ? fitSize.h : '100%',
                   border: '1px dashed',
                   borderColor: 'divider',
                   borderRadius: 1,
@@ -906,7 +978,7 @@ export default function WatermarkTool({
                   alt=""
                   draggable={false}
                   decoding="async"
-                  style={{ display: 'block', maxWidth: '100%', maxHeight: 480, width: 'auto', height: 'auto' }}
+                  style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
                 />
                 <canvas
                   ref={overlayRef}
@@ -991,62 +1063,6 @@ export default function WatermarkTool({
                   );
                 })}
               </Stack>
-            )}
-
-            {/* 底部工具栏 */}
-            <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-              <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-                继续添加
-                <input type="file" accept="image/*" multiple hidden onChange={handleAdd} />
-              </Button>
-              <Button
-                variant="text"
-                size="small"
-                color="inherit"
-                startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
-                onClick={clearAll}
-                disabled={items.length === 0}
-                sx={{ color: 'text.secondary' }}
-              >
-                清空
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                startIcon={<ContentCopyIcon sx={{ fontSize: 16 }} />}
-                onClick={applyToAll}
-                disabled={!selectedItem || items.length < 2}
-                sx={{ textTransform: 'none' }}
-              >
-                将此配置应用到全部图片
-              </Button>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}>
-                {items.length} 张 · {formatBytes(totalSize)}
-              </Typography>
-              <Box sx={{ flex: 1 }} />
-              <Button
-                variant="contained"
-                size="small"
-                onClick={() => void downloadAll()}
-                disabled={!hasOut || working}
-                startIcon={<FolderZipIcon sx={{ fontSize: 16 }} />}
-              >
-                打包 ZIP
-              </Button>
-            </Stack>
-
-            {working && progress && (
-              <Box sx={{ mt: 1.5 }}>
-                <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
-                    正在导出…
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}>
-                    {progress.done}/{progress.total}
-                  </Typography>
-                </Stack>
-                <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
-              </Box>
             )}
     </ToolWorkbench>
   );

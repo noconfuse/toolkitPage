@@ -147,6 +147,7 @@ export default function ImageConvert({
         dataUrl,
       });
     }
+    // 不限数量：转换循环本身逐个顺序执行（天然分批），CPU 不会被打满
     setItems((prev) => [...prev, ...next]);
   };
 
@@ -378,6 +379,55 @@ export default function ImageConvert({
         ) : undefined
       }
       flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      actions={
+        <Stack spacing={1}>
+          {working && progress && progress.total > 1 && (
+            <Box>
+              <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
+                  {progress.currentId ? '正在转换…' : '收尾中…'}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
+                >
+                  {progress.done}/{progress.total}
+                </Typography>
+              </Stack>
+              <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
+            </Box>
+          )}
+          {items.length > 0 && (
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+                继续添加
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  hidden
+                  onChange={handleAdd}
+                />
+              </Button>
+              <Tooltip title="清空全部">
+                <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
+                  <DeleteSweepIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+              <Box sx={{ flex: 1 }} />
+              <Button
+                variant="contained"
+                size="small"
+                onClick={downloadAll}
+                disabled={!hasOut || working}
+                startIcon={<FolderZipIcon sx={{ fontSize: 16 }} />}
+              >
+                打包 ZIP
+              </Button>
+            </Stack>
+          )}
+        </Stack>
+      }
       emptyState={
         <Box
           onClick={() => fileInputRef.current?.click()}
@@ -425,7 +475,18 @@ export default function ImageConvert({
         </Box>
       }
     >
-      <Stack spacing={1.5}>
+      <Stack
+        spacing={1.5}
+        sx={{
+          // 列表在容器内自适应：flex:1 撑满资源操作区，内容超高时内部滚动，不把下方操作栏顶开
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflowY: 'auto',
+          '&::-webkit-scrollbar': { width: 6 },
+          '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 3 },
+        }}
+      >
         {items.map((it) => (
             <Box
               key={it.id}
@@ -539,52 +600,6 @@ export default function ImageConvert({
             </Box>
           ))}
         </Stack>
-
-      {items.length > 0 && (
-        <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-          <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-            继续添加
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              hidden
-              onChange={handleAdd}
-            />
-          </Button>
-          <Tooltip title="清空全部">
-            <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
-              <DeleteSweepIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-          <Box sx={{ flex: 1 }} />
-          <Button
-            variant="contained"
-            size="small"
-            onClick={downloadAll}
-            disabled={!hasOut || working}
-            startIcon={<FolderZipIcon sx={{ fontSize: 16 }} />}
-          >
-            打包 ZIP
-          </Button>
-        </Stack>
-      )}
-
-      {/* 工作流串流出口已迁移到右侧栏底部（flow prop） */}
-
-      {working && progress && progress.total > 1 && (
-        <Box sx={{ mt: 1.5 }}>
-          <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
-              {progress.currentId ? '正在转换…' : '收尾中…'}
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}>
-              {progress.done}/{progress.total}
-            </Typography>
-          </Stack>
-          <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
-        </Box>
-      )}
     </ToolWorkbench>
   );
 }

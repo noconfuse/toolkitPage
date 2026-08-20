@@ -304,6 +304,7 @@ export default function PdfMerge({
       }
       next.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, file, pages });
     }
+    // 不限数量：合并/拆分循环本身逐个顺序执行（天然分批），CPU 不会被打满
     setItems((prev) => (mode === 'split' ? next : [...prev, ...next]));
   };
 
@@ -403,6 +404,84 @@ export default function PdfMerge({
           </ToggleButtonGroup>
         </Box>
       }
+      actions={
+        <Stack spacing={1}>
+          {working && progress && progress.total > 0 && (
+            <Box>
+              <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
+                  {mode === 'merge' ? '合并中…' : '拆分中…'}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
+                >
+                  {progress.done}/{progress.total}
+                </Typography>
+              </Stack>
+              <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
+            </Box>
+          )}
+          {items.length > 0 && (
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              {mode === 'merge' && (
+                <Button
+                  variant="outlined"
+                  size="small"
+                  component="label"
+                  startIcon={<UploadFileIcon sx={{ fontSize: 15 }} />}
+                >
+                  继续添加 PDF
+                  <input type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleAdd} />
+                </Button>
+              )}
+              <Button
+                variant="contained"
+                size="small"
+                onClick={run}
+                disabled={working || (mode === 'merge' ? items.length < 2 : items.length !== 1)}
+              >
+                {working ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <CircularProgress size={12} thickness={5} color="inherit" />
+                    处理中…
+                  </span>
+                ) : mode === 'merge' ? (
+                  '合并'
+                ) : (
+                  '拆分'
+                )}
+              </Button>
+              {result && (
+                <>
+                  <Box sx={{ flex: 1 }} />
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11, whiteSpace: 'nowrap' }}
+                  >
+                    {result.kind === 'merge' ? `已合并 ${result.pages} 页` : `已按 ${result.pages} 个区间拆分`} ·{' '}
+                    {formatBytes(result.size)}
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    onClick={() => downloadBlob(result.blob, result.name)}
+                    startIcon={result.kind === 'merge' ? <DownloadIcon sx={{ fontSize: 16 }} /> : <FolderZipIcon sx={{ fontSize: 16 }} />}
+                  >
+                    下载 {result.kind === 'merge' ? 'PDF' : 'ZIP'}
+                  </Button>
+                </>
+              )}
+              <Tooltip title="清空全部">
+                <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
+                  <DeleteSweepIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+            </Stack>
+          )}
+        </Stack>
+      }
       resource={
         items.length > 0 || result ? (
           <Box>
@@ -469,6 +548,17 @@ export default function PdfMerge({
         </Box>
       }
     >
+      {/* 内容在容器内自适应：flex:1 撑满资源操作区，超高时内部滚动，不把下方操作栏顶开 */}
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflowY: 'auto',
+          '&::-webkit-scrollbar': { width: 6 },
+          '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 3 },
+        }}
+      >
       {/* 文件列表 */}
       {items.length > 0 && (
         <>
@@ -566,82 +656,7 @@ export default function PdfMerge({
           )}
         </>
       )}
-
-      {/* 处理进度：放在功能按钮行上方 */}
-      {working && progress && progress.total > 0 && (
-        <Box sx={{ mt: 2 }}>
-          <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
-              {mode === 'merge' ? '合并中…' : '拆分中…'}
-            </Typography>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}>
-              {progress.done}/{progress.total}
-            </Typography>
-          </Stack>
-          <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
-        </Box>
-      )}
-
-      {/* 操作行：功能按钮放在一行 */}
-      {items.length > 0 && (
-        <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-          {mode === 'merge' && (
-            <Button
-              variant="outlined"
-              size="small"
-              component="label"
-              startIcon={<UploadFileIcon sx={{ fontSize: 15 }} />}
-            >
-              继续添加 PDF
-              <input type="file" accept="application/pdf,.pdf" multiple hidden onChange={handleAdd} />
-            </Button>
-          )}
-          <Button
-            variant="contained"
-            size="small"
-            onClick={run}
-            disabled={working || (mode === 'merge' ? items.length < 2 : items.length !== 1)}
-          >
-            {working ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <CircularProgress size={12} thickness={5} color="inherit" />
-                处理中…
-              </span>
-            ) : mode === 'merge' ? (
-              '合并'
-            ) : (
-              '拆分'
-            )}
-          </Button>
-          {result && (
-            <>
-              <Box sx={{ flex: 1 }} />
-              <Typography
-                variant="caption"
-                sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11, whiteSpace: 'nowrap' }}
-              >
-                {result.kind === 'merge' ? `已合并 ${result.pages} 页` : `已按 ${result.pages} 个区间拆分`} ·{' '}
-                {formatBytes(result.size)}
-              </Typography>
-              <Button
-                variant="contained"
-                color="success"
-                size="small"
-                onClick={() => downloadBlob(result.blob, result.name)}
-                startIcon={result.kind === 'merge' ? <DownloadIcon sx={{ fontSize: 16 }} /> : <FolderZipIcon sx={{ fontSize: 16 }} />}
-              >
-                下载 {result.kind === 'merge' ? 'PDF' : 'ZIP'}
-              </Button>
-            </>
-          )}
-          <Tooltip title="清空全部">
-            <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
-              <DeleteSweepIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-        </Stack>
-      )}
-
-      </ToolWorkbench>
+      </Box>
+    </ToolWorkbench>
   );
 }

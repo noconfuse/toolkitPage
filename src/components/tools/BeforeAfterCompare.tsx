@@ -3,11 +3,12 @@
 import * as React from 'react';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
+import { useContainSize } from '@/components/tools/ToolWorkbench';
 
 // 通用"前后对比"组件：左右拖动分割线比对待处理原图与处理结果。
 // - original / result 都要传 URL（blob: / data: / http: 都行），缺一不可时退化为只显示已就绪那一边。
 // - resultCheckerboard=true 时，下方 result 容器显示棋盘格背景（用于透明 PNG）。
-// - 尺寸：默认填满父容器宽度，按图片自然尺寸比 (aspect-ratio) 自适应高度。
+// - 尺寸：作为资源操作区内容时 flex:1 撑满容器，按图片自然尺寸比 (aspect-ratio) 自适应 contain-fit。
 // - 初始分割线位置 50%。
 // - 鼠标 + 触摸都支持：水平拖动分割线。
 
@@ -45,6 +46,29 @@ export function BeforeAfterCompare({
   const [ratio, setRatio] = React.useState(50); // 0~100
   const [dragging, setDragging] = React.useState(false);
 
+  // 图片自然尺寸（用于 contain-fit 撑满）：从已就绪的图取自然宽高
+  const [natSize, setNatSize] = React.useState<{ w: number; h: number } | null>(null);
+  React.useEffect(() => {
+    const src = originalUrl ?? resultUrl;
+    if (!src) {
+      setNatSize(null);
+      return;
+    }
+    let cancelled = false;
+    const im = new Image();
+    im.onload = () => {
+      if (!cancelled && im.naturalWidth > 0 && im.naturalHeight > 0) {
+        setNatSize({ w: im.naturalWidth, h: im.naturalHeight });
+      }
+    };
+    im.src = src;
+    return () => {
+      cancelled = true;
+    };
+  }, [originalUrl, resultUrl]);
+
+  const [fitRef, fitSize] = useContainSize(natSize?.w ?? 0, natSize?.h ?? 0, !!natSize);
+
   // 拖拽逻辑
   React.useEffect(() => {
     if (!dragging) return;
@@ -80,7 +104,7 @@ export function BeforeAfterCompare({
     'repeating-conic-gradient(#f0f0f0 0% 25%, #ffffff 0% 50%) 50% / 16px 16px';
 
   return (
-    <Box>
+    <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
       {!hideLabels && (
         <Box
           sx={{
@@ -94,8 +118,19 @@ export function BeforeAfterCompare({
         </Box>
       )}
 
-      {/* 内容区：图片等比显示，居中，不固定宽度（隐形图撑开容器，比例 = 图片比例） */}
-      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+      {/* 内容区：图片 contain-fit 等比撑满，居中；隐形图撑开容器，比例 = 图片比例 */}
+      <Box
+        ref={fitRef}
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <Box
           ref={wrapRef}
           sx={{
@@ -104,9 +139,8 @@ export function BeforeAfterCompare({
             borderColor: 'divider',
             borderRadius: 1,
             overflow: 'hidden',
-            width: 'fit-content',
-            maxWidth: '100%',
-            maxHeight: 480,
+            width: fitSize ? fitSize.w : '100%',
+            height: fitSize ? fitSize.h : '100%',
             background: '#fff',
             userSelect: 'none',
             touchAction: 'none',
@@ -119,10 +153,8 @@ export function BeforeAfterCompare({
             draggable={false}
             style={{
               display: 'block',
-              maxWidth: '100%',
-              maxHeight: 480,
-              width: 'auto',
-              height: 'auto',
+              width: '100%',
+              height: '100%',
               visibility: 'hidden',
             }}
           />

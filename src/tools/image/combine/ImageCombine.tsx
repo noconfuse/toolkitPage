@@ -24,6 +24,7 @@ import {
   TipCard,
   ShortcutList,
   SidebarResourceInfo,
+  useContainSize,
 } from '@/components/tools/ToolWorkbench';
 import {
   CANVAS_W,
@@ -127,6 +128,8 @@ export default function ImageCombine({
   // 画布真实像素（用户可设置）。界面 CSS：宽度固定占满容器，高度按 宽/高 比例自适应
   const [canvasW, setCanvasW] = React.useState(CANVAS_W);
   const [canvasH, setCanvasH] = React.useState(CANVAS_H);
+  // 画布按容器等比撑满（contain-fit）：宽高变化或容器缩放时自动重算
+  const [fitRef, fitSize] = useContainSize(canvasW, canvasH);
 
   // ───────── 重绘 ─────────
   const render = React.useCallback(() => {
@@ -1077,17 +1080,94 @@ export default function ImageCombine({
         />
       }
       flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      actions={
+        <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+          <Button
+            variant="contained"
+            size="small"
+            component="label"
+            startIcon={<AddPhotoAlternateIcon sx={{ fontSize: 16 }} />}
+          >
+            添加图片
+            <input
+              ref={baseFileInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={handleAddImage}
+            />
+          </Button>
+          <Button
+            variant="outlined"
+            color="inherit"
+            size="small"
+            onClick={handleDownload}
+            disabled={layers.length === 0}
+          >
+            画布下载
+          </Button>
+          <Tooltip title="去除周围透明像素后导出（结果尺寸小于画布，默认下载）">
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+              onClick={handleTrimmedDownload}
+              disabled={layers.length === 0}
+            >
+              下载
+            </Button>
+          </Tooltip>
+          <Button
+            variant="text"
+            color="inherit"
+            size="small"
+            startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
+            onClick={handleClear}
+            disabled={layers.length === 0 && !bgColor}
+          >
+            清空
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Typography
+            variant="caption"
+            sx={{
+              fontFamily: 'var(--font-geist-mono)',
+              color: 'text.secondary',
+              maxWidth: 280,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {layers.length > 0
+              ? `${layers[0].name} · ${layers.length} 个图层`
+              : `${canvasW} × ${canvasH}`}
+          </Typography>
+        </Stack>
+      }
     >
       {/* ───────── 画布 + 覆盖层 + 下方按钮 ───────── */}
-        {/* 画布预览列：CSS 宽度固定占满容器，高度跟随画布宽高比自适应（宽 800 × 高 3000
-            的长条画布会自然撑高，比例始终正确，画布不会被拉伸变形）。 */}
+      {/* 画布预览：容器 flex:1 居中，画布按宽高比等比撑满可用区域（contain-fit），
+          不会在中间留下大片空白，也不拉伸变形。 */}
+      <Box
+        ref={fitRef}
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
         <Box
           ref={surfaceRef}
           onMouseDown={onSurfaceMouseDown}
           sx={{
             position: 'relative',
-            width: '100%',
-            aspectRatio: `${canvasW} / ${canvasH}`,
+            width: fitSize ? fitSize.w : '100%',
+            height: fitSize ? fitSize.h : '100%',
             borderRadius: 1,
             overflow: 'hidden',
             border: 1,
@@ -1165,86 +1245,7 @@ export default function ImageCombine({
             </Box>
           )}
         </Box>
-
-        {/* 按钮行 */}
-        <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{
-            mt: 1.5,
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 1,
-          }}
-        >
-          <Button
-            variant="contained"
-            size="small"
-            component="label"
-            startIcon={<AddPhotoAlternateIcon sx={{ fontSize: 16 }} />}
-          >
-            添加图片
-            <input
-              ref={baseFileInputRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={handleAddImage}
-            />
-          </Button>
-
-          <Button
-            variant="outlined"
-            color="inherit"
-            size="small"
-            onClick={handleDownload}
-            disabled={layers.length === 0}
-          >
-            画布下载
-          </Button>
-
-          <Tooltip title="去除周围透明像素后导出（结果尺寸小于画布，默认下载）">
-            <Button
-              variant="contained"
-              color="primary"
-              size="small"
-              startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-              onClick={handleTrimmedDownload}
-              disabled={layers.length === 0}
-            >
-              下载
-            </Button>
-          </Tooltip>
-
-          <Button
-            variant="text"
-            color="inherit"
-            size="small"
-            startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
-            onClick={handleClear}
-            disabled={layers.length === 0 && !bgColor}
-          >
-            清空
-          </Button>
-
-          <Box sx={{ flex: 1 }} />
-
-          <Typography
-            variant="caption"
-            sx={{
-              fontFamily: 'var(--font-geist-mono)',
-              color: 'text.secondary',
-              maxWidth: 280,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {layers.length > 0
-              ? `${layers[0].name} · ${layers.length} 个图层`
-              : `${canvasW} × ${canvasH}`}
-          </Typography>
-        </Stack>
+      </Box>
     </ToolWorkbench>
   );
 }

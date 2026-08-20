@@ -18,6 +18,7 @@ import {
   SidebarTitle,
   TipCard,
   SidebarResourceInfo,
+  useContainSize,
   type ResourceInfoData,
   dropzoneBg,
   dropzoneBgSize,
@@ -192,6 +193,14 @@ export default function ImageCrop({
   // 不跟随鼠标——鼠标越界时画面不会滚出去，便于对齐框边缘。sx/sy 为角点的屏幕坐标，用于定位放大镜。
   const [mag, setMag] = React.useState<{ px: number; py: number; sx: number; sy: number } | null>(null);
   const magCanvasRef = React.useRef<HTMLCanvasElement | null>(null);
+
+  // 舞台/结果撑满：按图片宽高比 contain-fit 自适应容器
+  const [stageFitRef, stageFitSize] = useContainSize(nat.w, nat.h, phase === 'edit' && nat.w > 0 && nat.h > 0);
+  const [resultFitRef, resultFitSize] = useContainSize(
+    result?.w ?? 0,
+    result?.h ?? 0,
+    phase === 'result' && !!result,
+  );
 
   // 工作流串流：接收 ?flow= 上一工具的产物，直接载入第一张进入编辑
   const flowInput = useFlowInput();
@@ -626,12 +635,45 @@ export default function ImageCrop({
           ) : undefined
         }
         flow={flowImages.length ? <FlowPill images={flowImages} /> : undefined}
+        actions={
+          phase === 'edit' ? (
+            <Stack direction="row" spacing={1}>
+              <Button variant="outlined" size="small" onClick={handleReset} startIcon={<RestartAltIcon />}>
+                重置选区
+              </Button>
+              <Button variant="outlined" size="small" onClick={resetAll}>
+                更换图片
+              </Button>
+              <Button variant="contained" size="small" onClick={doCrop} startIcon={<CropFreeIcon />}>
+                裁剪
+              </Button>
+            </Stack>
+          ) : phase === 'result' ? (
+            <Stack direction="row" spacing={1}>
+              <Button variant="contained" size="small" onClick={download} startIcon={<DownloadIcon />}>
+                下载
+              </Button>
+              <Button variant="outlined" size="small" onClick={() => setPhase('edit')}>
+                重新裁剪
+              </Button>
+              <Button variant="outlined" size="small" onClick={resetAll}>
+                更换图片
+              </Button>
+            </Stack>
+          ) : undefined
+        }
       >
       {phase === 'edit' && sourceUrl && rect && (
         <>
           <Box
+            ref={stageFitRef}
             sx={{
+              flex: 1,
+              minHeight: 0,
+              minWidth: 0,
+              width: '100%',
               display: 'flex',
+              alignItems: 'center',
               justifyContent: 'center',
             }}
           >
@@ -641,9 +683,8 @@ export default function ImageCrop({
               ref={stageRef}
               sx={{
                 position: 'relative',
-                width: 'fit-content',
-                maxWidth: '100%',
-                maxHeight: 480,
+                width: stageFitSize ? stageFitSize.w : '100%',
+                height: stageFitSize ? stageFitSize.h : '100%',
                 overflow: 'hidden',
                 borderRadius: 1,
                 border: '1px dashed',
@@ -657,7 +698,7 @@ export default function ImageCrop({
                 src={sourceUrl}
                 alt="待裁剪"
                 draggable={false}
-                style={{ display: 'block', maxWidth: '100%', maxHeight: 480, width: 'auto', height: 'auto' }}
+                style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
               />
 
             {/* 裁剪框：box-shadow 压暗外部区域 */}
@@ -718,19 +759,6 @@ export default function ImageCrop({
             </Box>
           </Box>
           </Box>
-
-          {/* 功能按钮：放在图片下方，与其他工具布局一致 */}
-          <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-            <Button variant="outlined" size="small" onClick={handleReset} startIcon={<RestartAltIcon />}>
-              重置选区
-            </Button>
-            <Button variant="outlined" size="small" onClick={resetAll}>
-              更换图片
-            </Button>
-            <Button variant="contained" size="small" onClick={doCrop} startIcon={<CropFreeIcon />}>
-              裁剪
-            </Button>
-          </Stack>
         </>
       )}
 
@@ -778,42 +806,36 @@ export default function ImageCrop({
       )}
 
       {phase === 'result' && resultUrl && result && (
-        <Box>
+        <Box
+          ref={resultFitRef}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
           <Box
             sx={{
-              display: 'flex',
-              justifyContent: 'center',
+              border: '1px dashed',
+              borderColor: 'divider',
+              borderRadius: 1,
+              overflow: 'hidden',
+              background: '#fff',
+              width: resultFitSize ? resultFitSize.w : '100%',
+              height: resultFitSize ? resultFitSize.h : '100%',
             }}
           >
-            <Box
-              sx={{
-                border: '1px dashed',
-                borderColor: 'divider',
-                borderRadius: 1,
-                overflow: 'hidden',
-                background: '#fff',
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={resultUrl}
-                alt="裁剪结果"
-                style={{ display: 'block', maxWidth: '100%', maxHeight: 480 }}
-              />
-            </Box>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={resultUrl}
+              alt="裁剪结果"
+              style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain' }}
+            />
           </Box>
-
-          <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-            <Button variant="contained" size="small" onClick={download} startIcon={<DownloadIcon />}>
-              下载
-            </Button>
-            <Button variant="outlined" size="small" onClick={() => setPhase('edit')}>
-              重新裁剪
-            </Button>
-            <Button variant="outlined" size="small" onClick={resetAll}>
-              更换图片
-            </Button>
-          </Stack>
         </Box>
       )}
       </ToolWorkbench>

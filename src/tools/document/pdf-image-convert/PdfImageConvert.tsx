@@ -192,6 +192,7 @@ export default function PdfImageConvert({
         height: img.height,
       });
     }
+    // 不限数量：PDF 生成循环本身逐个顺序处理（天然分批），CPU 不会被打满
     setItems((prev) => [...prev, ...next]);
     setError(null);
   };
@@ -569,23 +570,6 @@ export default function PdfImageConvert({
                   />
                 </Box>
               </Stack>
-
-              <Button
-                variant="contained"
-                size="small"
-                fullWidth
-                onClick={handleExportI2P}
-                disabled={items.length === 0 || exporting}
-                startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-              >
-                {exporting ? '导出中…' : '导出 PDF'}
-              </Button>
-              {exporting && <LinearProgress sx={{ mt: 1.5 }} />}
-              {error && (
-                <Typography variant="caption" sx={{ mt: 1, display: 'block', color: 'error.main' }}>
-                  {error}
-                </Typography>
-              )}
             </Box>
           ) : (
             <Box sx={{ mt: 3 }}>
@@ -631,20 +615,83 @@ export default function PdfImageConvert({
                   onChange={(e) => setPageRange(e.target.value)}
                 />
               </Stack>
-
-              <Button
-                variant="contained"
-                size="small"
-                fullWidth
-                onClick={handleExportP2I}
-                disabled={!doc || working}
-                startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-              >
-                {working ? '导出中…' : '导出图片（自动下载）'}
-              </Button>
             </Box>
           )}
         </>
+      }
+      actions={
+        <Stack spacing={1}>
+          {dir === 'i2p' ? (
+            <>
+              {exporting && <LinearProgress />}
+              {error && (
+                <Typography variant="caption" sx={{ display: 'block', color: 'error.main' }}>
+                  {error}
+                </Typography>
+              )}
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={handleExportI2P}
+                  disabled={items.length === 0 || exporting}
+                  startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+                >
+                  {exporting ? '导出中…' : '导出 PDF'}
+                </Button>
+                <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+                  继续添加
+                  <input type="file" accept="image/*" multiple hidden onChange={handleAddFiles} />
+                </Button>
+                <Tooltip title="清空全部">
+                  <IconButton size="small" color="inherit" onClick={clearAll} disabled={items.length === 0} sx={{ color: 'text.secondary' }}>
+                    <DeleteSweepIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+                <Box sx={{ flex: 1 }} />
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
+                  {items.length} 张 · 顺序即页序
+                </Typography>
+              </Stack>
+            </>
+          ) : (
+            <>
+              {working && (
+                <Box>
+                  <LinearProgress variant="determinate" value={progress * 100} />
+                  <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
+                    {Math.round(progress * 100)}%
+                  </Typography>
+                </Box>
+              )}
+              <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  onClick={handleExportP2I}
+                  disabled={!doc || working}
+                  startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+                >
+                  {working ? '导出中…' : '导出图片（自动下载）'}
+                </Button>
+                <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+                  换 PDF
+                  <input type="file" accept="application/pdf" hidden onChange={handlePdf} />
+                </Button>
+                <Tooltip title="清空">
+                  <IconButton size="small" color="inherit" onClick={handleClear} sx={{ color: 'text.secondary' }}>
+                    <RestartAltIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+                <Box sx={{ flex: 1 }} />
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
+                  {pdfFile?.name} · {pageCount} 页
+                  {outputs.length > 0 && ` · 已导出 ${outputs.length} 张`}
+                </Typography>
+              </Stack>
+            </>
+          )}
+        </Stack>
       }
       resource={resource}
       emptyState={
@@ -718,11 +765,11 @@ export default function PdfImageConvert({
       }
     >
       {dir === 'i2p' ? (
-        <Box>
-          {/* 预览列：与 PDF → 图片 一致的网格缩略图布局，避免整页大图撑满 */}
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          {/* 预览列：网格缩略图布局，在容器内自适应（超高内部滚动，不顶开下方操作栏） */}
           <Box
             sx={{
-              maxHeight: '70vh',
+              maxHeight: '100%',
               overflowY: 'auto',
               borderRadius: 1,
               border: 1,
@@ -841,29 +888,13 @@ export default function PdfImageConvert({
               ))}
             </Box>
           </Box>
-
-          <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-              继续添加
-              <input type="file" accept="image/*" multiple hidden onChange={handleAddFiles} />
-            </Button>
-            <Tooltip title="清空全部">
-              <IconButton size="small" color="inherit" onClick={clearAll} disabled={items.length === 0} sx={{ color: 'text.secondary' }}>
-                <DeleteSweepIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-            <Box sx={{ flex: 1 }} />
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
-              {items.length} 张 · 顺序即页序
-            </Typography>
-          </Stack>
         </Box>
       ) : (
-        <Box>
-          {/* 预览列：最大高度 70vh，内部按需滚动 */}
+        <Box sx={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+          {/* 预览列：在容器内自适应（超高内部滚动，不顶开下方操作栏） */}
           <Box
             sx={{
-              maxHeight: '70vh',
+              maxHeight: '100%',
               overflowY: 'auto',
               borderRadius: 1,
               border: 1,
@@ -982,33 +1013,7 @@ export default function PdfImageConvert({
                 PDF 加载中…
               </Box>
             )}
-          </Box>
-
-          <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-            <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-              换 PDF
-              <input type="file" accept="application/pdf" hidden onChange={handlePdf} />
-            </Button>
-            <Tooltip title="清空">
-              <IconButton size="small" color="inherit" onClick={handleClear} sx={{ color: 'text.secondary' }}>
-                <RestartAltIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-            <Box sx={{ flex: 1 }} />
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)' }}>
-              {pdfFile?.name} · {pageCount} 页
-              {outputs.length > 0 && ` · 已导出 ${outputs.length} 张`}
-            </Typography>
-          </Stack>
-
-          {working && (
-            <Box sx={{ mt: 2 }}>
-              <LinearProgress variant="determinate" value={progress * 100} />
-              <Typography variant="caption" sx={{ color: 'text.secondary', mt: 0.5, display: 'block' }}>
-                {Math.round(progress * 100)}%
-              </Typography>
-            </Box>
-          )}
+        </Box>
         </Box>
       )}
     </ToolWorkbench>

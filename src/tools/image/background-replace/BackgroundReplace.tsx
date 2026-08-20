@@ -333,6 +333,82 @@ export default function BackgroundReplace({
           </Button>
         </Box>
       }
+      actions={
+        <Stack spacing={1}>
+          {busy && (
+            <Box>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', mb: 0.75 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1 }}>
+                  {statusText ?? `${Math.round(progress * 100)}%`}
+                </Typography>
+                {phase === 'processing' && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'text.disabled', fontFamily: 'var(--font-geist-mono)' }}
+                  >
+                    {elapsedStr || '0s'}
+                  </Typography>
+                )}
+              </Stack>
+              <LinearProgress
+                variant={phase === 'processing' ? 'indeterminate' : 'determinate'}
+                value={Math.round(progress * 100)}
+                sx={{ height: 4, borderRadius: 2 }}
+              />
+            </Box>
+          )}
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'nowrap' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              component="label"
+              disabled={busy}
+              startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
+            >
+              更换图片
+              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onFile} />
+            </Button>
+
+            <Button
+              variant="text"
+              size="small"
+              color="inherit"
+              startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
+              onClick={reset}
+              disabled={busy}
+              sx={{ color: 'text.secondary' }}
+            >
+              清空
+            </Button>
+
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AutoFixHighIcon sx={{ fontSize: 16 }} />}
+              onClick={handleRemoveBackground}
+              disabled={busy}
+            >
+              {resultUrl ? '重新处理' : 'AI 去背景'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              color="inherit"
+              onClick={handleDownload}
+              disabled={!resultUrl || busy}
+              startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+            >
+              下载
+            </Button>
+          </Stack>
+        </Stack>
+      }
     >
       {/* 左主区 */}
       <BeforeAfterCompare
@@ -344,87 +420,6 @@ export default function BackgroundReplace({
         hideLabels
       />
 
-      {busy && (
-        <Box sx={{ mt: 2 }}>
-          {/* loading 阶段：状态文字 + 真实字节进度（determinate）
-              processing 阶段：库内部推理/编码无进度回调，用 indeterminate 滚动
-                + 子步骤轮转 + 已用时长，让用户清楚知道程序在跑、不是卡死 */}
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'baseline', mb: 0.75 }}>
-            <Typography variant="caption" sx={{ color: 'text.secondary', flex: 1 }}>
-              {statusText ?? `${Math.round(progress * 100)}%`}
-            </Typography>
-            {phase === 'processing' && (
-              <Typography
-                variant="caption"
-                sx={{ color: 'text.disabled', fontFamily: 'var(--font-geist-mono)' }}
-              >
-                {elapsedStr || '0s'}
-              </Typography>
-            )}
-          </Stack>
-          <LinearProgress
-            variant={phase === 'processing' ? 'indeterminate' : 'determinate'}
-            value={Math.round(progress * 100)}
-            sx={{ height: 4, borderRadius: 2 }}
-          />
-        </Box>
-      )}
-
-      {error && (
-        <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      <Stack
-        direction="row"
-        spacing={1}
-        sx={{ mt: 2, alignItems: 'center', flexWrap: 'nowrap' }}
-      >
-        <Button
-          variant="outlined"
-          size="small"
-          component="label"
-          disabled={busy}
-          startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
-        >
-          更换图片
-          <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={onFile} />
-        </Button>
-
-        <Button
-          variant="text"
-          size="small"
-          color="inherit"
-          startIcon={<RestartAltIcon sx={{ fontSize: 16 }} />}
-          onClick={reset}
-          disabled={busy}
-          sx={{ color: 'text.secondary' }}
-        >
-          清空
-        </Button>
-
-        <Box sx={{ flex: 1 }} />
-        <Button
-          variant="contained"
-          size="small"
-          startIcon={<AutoFixHighIcon sx={{ fontSize: 16 }} />}
-          onClick={handleRemoveBackground}
-          disabled={busy}
-        >
-          {resultUrl ? '重新处理' : 'AI 去背景'}
-        </Button>
-        <Button
-          variant="outlined"
-          size="small"
-          color="inherit"
-          onClick={handleDownload}
-          disabled={!resultUrl || busy}
-          startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-        >
-          下载
-        </Button>
-      </Stack>
     </ToolWorkbench>
   );
 }

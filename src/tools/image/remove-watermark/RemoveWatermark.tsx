@@ -24,6 +24,7 @@ import {
   SidebarTitle,
   TipCard,
   SidebarResourceInfo,
+  useContainSize,
   dropzoneBg,
   dropzoneBgSize,
   dropzoneBgPos,
@@ -89,6 +90,9 @@ export default function RemoveWatermark({
   const [error, setError] = React.useState<string | null>(null);
 
   const busy = running || phase !== 'idle';
+
+  // 画布撑满：按图片宽高比 contain-fit 自适应容器
+  const [fitRef, fitSize] = useContainSize(imgSize?.w ?? 0, imgSize?.h ?? 0, !!imgSize);
 
   // 最原始底图（加载后不变，用于前后对比）
   const originalDataRef = React.useRef<ImageData | null>(null);
@@ -668,16 +672,105 @@ export default function RemoveWatermark({
         ) : undefined
       }
       flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      actions={
+        <Stack spacing={1}>
+          {showProgress && (
+            <Box>
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>
+                {statusText ?? `${Math.round(progress * 100)}%`}
+              </Typography>
+              <LinearProgress
+                variant={phase === 'repairing' ? 'indeterminate' : 'determinate'}
+                value={Math.round(progress * 100)}
+                sx={{ height: 4, borderRadius: 2 }}
+              />
+            </Box>
+          )}
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'nowrap' }}>
+            <Button
+              variant="outlined"
+              size="small"
+              component="label"
+              disabled={busy}
+              startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
+            >
+              更换图片
+              <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFile} />
+            </Button>
+
+            <Tooltip title="撤销上一步">
+              <span>
+                <IconButton
+                  size="small"
+                  color="inherit"
+                  onClick={handleUndo}
+                  disabled={busy || (historyRef.current.length === 0 && maskHistoryRef.current.length === 0)}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  <UndoIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="清除所有涂抹">
+              <span>
+                <IconButton
+                  size="small"
+                  color="inherit"
+                  onClick={clearMask}
+                  disabled={!hasMask || busy}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  <RestartAltIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <Box sx={{ flex: 1 }} />
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleProcess}
+              disabled={busy || !hasMask}
+              startIcon={<AutoFixHighIcon sx={{ fontSize: 16 }} />}
+            >
+              {busy ? '处理中' : 'AI 修复'}
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              color="inherit"
+              onClick={handleDownload}
+              disabled={!isProcessed || busy}
+              startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+            >
+              下载
+            </Button>
+          </Stack>
+        </Stack>
+      }
     >
       {!imgSize ? null : (
         <>
           {/* ───────── 左：画布预览 + 底部工具栏 ───────── */}
-          <Box sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+          {/* minHeight: 0 必须带上：否则 min-height:auto 按内容（fitRef 里的画布）撑开，
+              外层外壳 pinned 高度链到这一层就断了，useContainSize 会测出宽度驱动的错误尺寸，
+              画布超高溢出被外壳 overflow:hidden 裁掉 */}
+          <Box sx={{ flex: 1, minWidth: 0, minHeight: 0, width: '100%', display: 'flex', flexDirection: 'column' }}>
             <Box
+              ref={fitRef}
               sx={{
+                flex: 1,
+                minHeight: 0,
+                minWidth: 0,
                 width: '100%',
                 // 预览容器：图片等比居中，不固定宽度
                 display: 'flex',
+                alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
@@ -687,9 +780,8 @@ export default function RemoveWatermark({
                 ref={canvasWrapRef}
                 sx={{
                   position: 'relative',
-                  width: 'fit-content',
-                  maxWidth: '100%',
-                  maxHeight: 480,
+                  width: fitSize ? fitSize.w : '100%',
+                  height: fitSize ? fitSize.h : '100%',
                   border: '1px dashed',
                   borderColor: 'divider',
                   borderRadius: 1,
@@ -704,10 +796,8 @@ export default function RemoveWatermark({
                   draggable={false}
                   style={{
                     display: 'block',
-                    maxWidth: '100%',
-                    maxHeight: 480,
-                    width: 'auto',
-                    height: 'auto',
+                    width: '100%',
+                    height: '100%',
                     visibility: 'hidden',
                   }}
                 />
@@ -800,86 +890,6 @@ export default function RemoveWatermark({
               </Box>
             </Box>
 
-            {showProgress && (
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.75 }}>
-                  {statusText ?? `${Math.round(progress * 100)}%`}
-                </Typography>
-                <LinearProgress
-                  variant={phase === 'repairing' ? 'indeterminate' : 'determinate'}
-                  value={Math.round(progress * 100)}
-                  sx={{ height: 4, borderRadius: 2 }}
-                />
-              </Box>
-            )}
-
-            {error && (
-              <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
-                {error}
-              </Alert>
-            )}
-
-            {/* 底部工具栏：功能按钮单行展示（配置项统一放右栏） */}
-            <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: 'center', flexWrap: 'nowrap' }}>
-              <Button
-                variant="outlined"
-                size="small"
-                component="label"
-                disabled={busy}
-                startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
-              >
-                更换图片
-                <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFile} />
-              </Button>
-
-              <Tooltip title="撤销上一步">
-                <span>
-                  <IconButton
-                    size="small"
-                    color="inherit"
-                    onClick={handleUndo}
-                    disabled={busy || (historyRef.current.length === 0 && maskHistoryRef.current.length === 0)}
-                    sx={{ color: 'text.secondary' }}
-                  >
-                    <UndoIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </span>
-              </Tooltip>
-              <Tooltip title="清除所有涂抹">
-                <span>
-                  <IconButton
-                    size="small"
-                    color="inherit"
-                    onClick={clearMask}
-                    disabled={!hasMask || busy}
-                    sx={{ color: 'text.secondary' }}
-                  >
-                    <RestartAltIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </span>
-              </Tooltip>
-
-              <Box sx={{ flex: 1 }} />
-              <Button
-                variant="contained"
-                size="small"
-                onClick={handleProcess}
-                disabled={busy || !hasMask}
-                startIcon={<AutoFixHighIcon sx={{ fontSize: 16 }} />}
-              >
-                {busy ? '处理中' : 'AI 修复'}
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                color="inherit"
-                onClick={handleDownload}
-                disabled={!isProcessed || busy}
-                startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-              >
-                下载
-              </Button>
-            </Stack>
           </Box>
         </>
       )}

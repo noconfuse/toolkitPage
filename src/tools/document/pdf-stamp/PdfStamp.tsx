@@ -171,9 +171,9 @@ export default function PdfStamp({
     }
   }, [layers, vpSize]);
 
-  // ───────── 页面显示尺寸：按纸张比例缩放，保证整页可见 ─────────
-  // 规则：scale = min(1, 可用宽度/页宽, 70vh/页高)，容器宽高 = 页宽高 × scale。
-  // 宽度不必占满；页面偏高时整体缩小而非裁掉底部，容器始终能装下完整一页。
+  // ───────── 页面显示尺寸：按纸张比例 contain-fit 撑满容器 ─────────
+  // 规则：scale = min(可用宽/页宽, 可用高/页高)，容器宽高 = 页宽高 × scale。
+  // 页面等比放大填满资源操作区（flex:1），小页面不再留大片空白；不拉伸变形。
   const previewWrapRef = React.useRef<HTMLDivElement | null>(null);
   const [dispSize, setDispSize] = React.useState<{ w: number; h: number } | null>(null);
   React.useLayoutEffect(() => {
@@ -185,8 +185,8 @@ export default function PdfStamp({
     if (!el) return;
     const update = () => {
       const rect = el.getBoundingClientRect();
-      const availH = window.innerHeight * 0.7; // 对应 70vh
-      const scale = Math.min(1, rect.width / vpSize.w, availH / vpSize.h);
+      if (!rect.width || !rect.height) return;
+      const scale = Math.min(rect.width / vpSize.w, rect.height / vpSize.h);
       setDispSize({ w: vpSize.w * scale, h: vpSize.h * scale });
     };
     update();
@@ -711,6 +711,83 @@ export default function PdfStamp({
           )}
         </>
       }
+      actions={
+        <Stack spacing={1}>
+          {exporting && <LinearProgress />}
+          <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={handleExport}
+              disabled={layers.length === 0 || exporting}
+              startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+            >
+              {exporting ? '导出中…' : '导出 PDF'}
+            </Button>
+            <Button variant="contained" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+              {pdfFile ? '换 PDF' : '上传 PDF'}
+              <input type="file" accept="application/pdf" hidden onChange={handlePdfChange} />
+            </Button>
+            <Tooltip title={pdfFile ? '添加一张新贴图层' : '请先上传 PDF'} placement="top">
+              <span>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  component="label"
+                  disabled={!pdfFile}
+                  startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
+                >
+                  叠加图片
+                  <input type="file" accept="image/*" hidden onChange={handleOverlayFile} />
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title={pdfFile ? '手写一个签名，自动落为贴图层' : '请先上传 PDF'} placement="top">
+              <span>
+                <Button
+                  variant={signatureMode ? 'contained' : 'outlined'}
+                  size="small"
+                  color={signatureMode ? 'primary' : 'inherit'}
+                  disabled={!pdfFile}
+                  onClick={() => setSignatureMode((v) => !v)}
+                  startIcon={<DrawIcon sx={{ fontSize: 16 }} />}
+                >
+                  {signatureMode ? '收起签名' : '手写签名'}
+                </Button>
+              </span>
+            </Tooltip>
+            <Tooltip title="清空所有图层" placement="top">
+              <span>
+                <IconButton
+                  size="small"
+                  color="inherit"
+                  onClick={handleClear}
+                  disabled={layers.length === 0}
+                  sx={{ p: 0.5, color: 'text.secondary' }}
+                >
+                  <RestartAltIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Box sx={{ flex: 1 }} />
+            {pdfFile && (
+              <Typography
+                variant="caption"
+                sx={{
+                  fontFamily: 'var(--font-geist-mono)',
+                  color: 'text.secondary',
+                  maxWidth: 280,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {pdfFile.name} · {pageCount} 页 · {layers.length} 个图层
+              </Typography>
+            )}
+          </Stack>
+        </Stack>
+      }
       resource={
         pdfFile ? (
           <SidebarResourceInfo
@@ -724,15 +801,16 @@ export default function PdfStamp({
       }
       emptyState={<EmptyPdf onSelect={handlePdfChange} />}
     >
-      {/* 画布预览列：容器按纸张比例缩放显示整页（宽度不占满），页面偏高时整体缩小 */}
+      {/* 画布预览列：flex:1 撑满剩余空间，页面按纸张比例 contain-fit 居中显示 */}
       <Box
         ref={previewWrapRef}
         sx={{
-          position: 'relative',
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
           display: 'flex',
+          alignItems: 'center',
           justifyContent: 'center',
-          maxHeight: '70vh',
-          overflow: 'auto',
           bgcolor: '#fafaf7',
           backgroundImage: `linear-gradient(45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(-45deg, rgba(15,31,29,0.05) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, rgba(15,31,29,0.05) 75%), linear-gradient(-45deg, transparent 75%, rgba(15,31,29,0.05) 75%)`,
           backgroundSize: '20px 20px',
@@ -748,7 +826,7 @@ export default function PdfStamp({
             sx={{
               position: 'relative',
               width: dispSize ? dispSize.w : 'fit-content',
-              height: dispSize ? dispSize.h : 'auto',
+              height: dispSize ? dispSize.h : '100%',
               maxWidth: '100%',
               borderRadius: 1,
               overflow: 'hidden',
@@ -854,80 +932,6 @@ export default function PdfStamp({
             )}
           </Box>
         </Box>
-
-        {/* 按钮行 */}
-        <Stack
-          direction="row"
-          spacing={1.5}
-          sx={{ mt: 1.5, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}
-        >
-          <Button variant="contained" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-            {pdfFile ? '换 PDF' : '上传 PDF'}
-            <input type="file" accept="application/pdf" hidden onChange={handlePdfChange} />
-          </Button>
-
-          <Tooltip title={pdfFile ? '添加一张新贴图层' : '请先上传 PDF'} placement="top">
-            <span>
-              <Button
-                variant="outlined"
-                size="small"
-                component="label"
-                disabled={!pdfFile}
-                startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
-              >
-                叠加图片
-                <input type="file" accept="image/*" hidden onChange={handleOverlayFile} />
-              </Button>
-            </span>
-          </Tooltip>
-
-          <Tooltip title={pdfFile ? '手写一个签名，自动落为贴图层' : '请先上传 PDF'} placement="top">
-            <span>
-              <Button
-                variant={signatureMode ? 'contained' : 'outlined'}
-                size="small"
-                color={signatureMode ? 'primary' : 'inherit'}
-                disabled={!pdfFile}
-                onClick={() => setSignatureMode((v) => !v)}
-                startIcon={<DrawIcon sx={{ fontSize: 16 }} />}
-              >
-                {signatureMode ? '收起签名' : '手写签名'}
-              </Button>
-            </span>
-          </Tooltip>
-
-          <Tooltip title="清空所有图层" placement="top">
-            <span>
-              <IconButton
-                size="small"
-                color="inherit"
-                onClick={handleClear}
-                disabled={layers.length === 0}
-                sx={{ p: 0.5, color: 'text.secondary' }}
-              >
-                <RestartAltIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </span>
-          </Tooltip>
-
-          <Box sx={{ flex: 1 }} />
-
-          {pdfFile && (
-            <Typography
-              variant="caption"
-              sx={{
-                fontFamily: 'var(--font-geist-mono)',
-                color: 'text.secondary',
-                maxWidth: 280,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {pdfFile.name} · {pageCount} 页 · {layers.length} 个图层
-            </Typography>
-          )}
-        </Stack>
 
       {/* 签名弹窗 */}
       <Dialog

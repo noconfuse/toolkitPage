@@ -223,6 +223,7 @@ export default function ImageResize({
         dataUrl,
       });
     }
+    // 不限数量：处理循环本身逐个顺序执行（天然分批），CPU 不会被打满
     setItems((prev) => {
       const merged = [...prev, ...next];
       // 把最新数组写到 ref，方便 resizeAll 读到
@@ -611,9 +612,83 @@ export default function ImageResize({
         ) : undefined
       }
       flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      actions={
+        <Stack spacing={1}>
+          {working && progress && (
+            <Box>
+              <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
+                  {progress.currentId ? '正在调整…' : '收尾中…'}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
+                >
+                  {progress.done}/{progress.total}
+                </Typography>
+              </Stack>
+              <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
+            </Box>
+          )}
+          {items.length > 0 && (
+            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
+              <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
+                继续添加
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  hidden
+                  onChange={handleAdd}
+                />
+              </Button>
+              <Tooltip title="清空全部">
+                <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
+                  <DeleteSweepIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+              <Box sx={{ flex: 1 }} />
+              {hasOut && (
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: 'text.secondary',
+                    fontFamily: 'var(--font-geist-mono)',
+                    fontSize: 11,
+                  }}
+                >
+                  {items.filter((x) => x.outBlob).length} 张已调整 ·{' '}
+                  {formatBytes(Math.max(0, totalOrig - totalOut))}
+                </Typography>
+              )}
+              <Button
+                variant="contained"
+                size="small"
+                onClick={downloadAll}
+                disabled={!hasOut || working}
+                startIcon={<FolderZipIcon sx={{ fontSize: 16 }} />}
+              >
+                打包 ZIP
+              </Button>
+            </Stack>
+          )}
+        </Stack>
+      }
     >
       {/* 左主区：图片列表（拖拽上传由 ToolWorkbench 外壳统一处理） */}
-      <Stack spacing={1.5}>
+      <Stack
+        spacing={1.5}
+        sx={{
+          // 列表在容器内自适应：flex:1 撑满资源操作区，内容超高时内部滚动，不把下方操作栏顶开
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          overflowY: 'auto',
+          '&::-webkit-scrollbar': { width: 6 },
+          '&::-webkit-scrollbar-thumb': { bgcolor: 'divider', borderRadius: 3 },
+        }}
+      >
         {items.map((it) => {
           return (
             <Box
@@ -764,69 +839,6 @@ export default function ImageResize({
           );
         })}
       </Stack>
-
-      {/* 整体进度：位于图片列表与操作行之间 */}
-      {working && progress && (
-        <Box>
-          <Stack direction="row" sx={{ mb: 0.5, justifyContent: 'space-between' }}>
-            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11 }}>
-              {progress.currentId ? '正在调整…' : '收尾中…'}
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{ color: 'text.secondary', fontFamily: 'var(--font-geist-mono)', fontSize: 11 }}
-            >
-              {progress.done}/{progress.total}
-            </Typography>
-          </Stack>
-          <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
-        </Box>
-      )}
-
-      {/* 操作行 */}
-      {items.length > 0 && (
-        <Stack direction="row" spacing={1.5} sx={{ mt: 2, alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
-          <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
-            继续添加
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              hidden
-              onChange={handleAdd}
-            />
-          </Button>
-          <Tooltip title="清空全部">
-            <IconButton size="small" color="inherit" onClick={clearAll} sx={{ color: 'text.secondary' }}>
-              <DeleteSweepIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-          <Box sx={{ flex: 1 }} />
-          {hasOut && (
-            <Typography
-              variant="caption"
-              sx={{
-                color: 'text.secondary',
-                fontFamily: 'var(--font-geist-mono)',
-                fontSize: 11,
-              }}
-            >
-              {items.filter((x) => x.outBlob).length} 张已调整 ·{' '}
-              {formatBytes(Math.max(0, totalOrig - totalOut))}
-            </Typography>
-          )}
-          <Button
-            variant="contained"
-            size="small"
-            onClick={downloadAll}
-            disabled={!hasOut || working}
-            startIcon={<FolderZipIcon sx={{ fontSize: 16 }} />}
-          >
-            打包 ZIP
-          </Button>
-        </Stack>
-      )}
     </ToolWorkbench>
   );
 }

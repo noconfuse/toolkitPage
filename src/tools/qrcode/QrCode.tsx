@@ -19,6 +19,7 @@ import {
   SidebarTitle,
   TipCard,
   SidebarResourceInfo,
+  useContainSize,
 } from '@/components/tools/ToolWorkbench';
 import FlowPill from '@/components/tools/FlowPill';
 import { makeFlowImage, type FlowImage } from '@/lib/flow';
@@ -84,6 +85,9 @@ export default function QrCode({
   const canvasHostRef = React.useRef<HTMLDivElement | null>(null);
   const instanceRef = React.useRef<QRCodeStyling | null>(null);
   const genRef = React.useRef(0); // 结果 blob 生成序号，避免异步取图乱序覆盖
+
+  // 二维码预览撑满：正方形 contain-fit 自适应容器
+  const [fitRef, fitSize] = useContainSize(1, 1);
 
   // 选项变化即重绘（qr-code-styling 无异步，无需防抖）
   React.useEffect(() => {
@@ -239,8 +243,31 @@ export default function QrCode({
         </Box>
       }
       flow={flowImages.length > 0 ? <FlowPill images={flowImages} /> : undefined}
+      actions={
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Button
+            variant="contained"
+            size="small"
+            onClick={download}
+            disabled={!text.trim()}
+            startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
+          >
+            下载 PNG
+          </Button>
+        </Stack>
+      }
     >
-      <Box>
+      <Box
+        sx={{
+          // 内容在容器内自适应：输入框固定，二维码 flex:1 撑满剩余区域
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
         <TextField
           label="内容"
           placeholder="输入文本或链接，例如 https://example.com"
@@ -254,12 +281,23 @@ export default function QrCode({
         />
 
         <Box
+          ref={fitRef}
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            width: '100%',
+            mt: 2.5,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+        <Box
           sx={{
             position: 'relative',
-            width: '100%',
-            maxWidth: 480,
-            aspectRatio: '1 / 1',
-            mt: 2.5,
+            width: fitSize ? fitSize.w : '100%',
+            height: fitSize ? fitSize.h : 'auto',
             borderRadius: 1,
             border: 1,
             borderColor: 'divider',
@@ -306,18 +344,7 @@ export default function QrCode({
             </Stack>
           )}
         </Box>
-
-        <Stack direction="row" spacing={1} sx={{ mt: 2, alignItems: 'center' }}>
-          <Button
-            variant="contained"
-            size="small"
-            onClick={download}
-            disabled={!text.trim()}
-            startIcon={<DownloadIcon sx={{ fontSize: 16 }} />}
-          >
-            下载 PNG
-          </Button>
-        </Stack>
+        </Box>
       </Box>
     </ToolWorkbench>
   );
