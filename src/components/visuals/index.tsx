@@ -136,6 +136,22 @@ export function ThumbImageCrop(props: SvgProps) {
   );
 }
 
+export function ThumbImageDedupe(props: SvgProps) {
+  return (
+    <svg {...baseSvgProps} {...strokeProps} {...props}>
+      {/* 两张重叠的图片框（重复） */}
+      <rect x="16" y="18" width="46" height="54" rx="3" opacity="0.4" />
+      <path d="M24 32 L34 44 L42 38 L50 52" opacity="0.3" />
+      <rect x="38" y="28" width="46" height="54" rx="3" />
+      <path d="M46 42 L56 54 L64 48 L72 62" opacity="0.5" />
+      <circle cx="64" cy="38" r="3" opacity="0.5" />
+      {/* 去重对勾徽标 */}
+      <circle cx="76" cy="76" r="9" fill="currentColor" stroke="none" opacity="0.15" />
+      <path d="M70 76 L74 80 L82 70" strokeWidth="2" />
+    </svg>
+  );
+}
+
 export function ThumbImageCompress(props: SvgProps) {
   return (
     <svg {...baseSvgProps} {...strokeProps} {...props}>

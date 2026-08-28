@@ -18,10 +18,12 @@ import Tooltip from '@mui/material/Tooltip';
 import LinearProgress from '@mui/material/LinearProgress';
 import CircularProgress from '@mui/material/CircularProgress';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import DownloadIcon from '@mui/icons-material/Download';
 import FolderZipIcon from '@mui/icons-material/FolderZip';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineOutlined';
 import JSZip from 'jszip';
 import {
   ToolWorkbench,
@@ -44,6 +46,7 @@ type Item = {
   id: string;
   file: File;
   name: string;
+  relPath: string; // 目录内相对路径（拖入文件夹时保留结构；多选文件时为文件名）
   kind: ImgKind;
   origSize: number;
   origWidth: number;
@@ -59,6 +62,12 @@ type Item = {
   done?: boolean;
   // true = 本轮处理失败
   failed?: boolean;
+  // 失败原因（failed 时展示）
+  failReason?: string;
+  // true = 原文件损坏/被截断，已回退 canvas 容错编码（输出为不完整图）
+  corrupt?: boolean;
+  // true = 回退结果比原文件大，已保留原文件
+  keptOriginal?: boolean;
 };
 
 // 整体进度：{ 完成数, 总数, 当前正在处理的项 }
@@ -81,6 +90,50 @@ const readDataUrl = (file: File) =>
     fr.onerror = reject;
     fr.readAsDataURL(file);
   });
+
+// ───────── 文件夹拖拽遍历（webkitGetAsEntry 保留目录结构）─────────
+type DirEntry = { path: string; file: File };
+
+function readEntry(entry: FileSystemEntry, path: string): Promise<DirEntry[]> {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      (entry as FileSystemFileEntry).file(
+        (file) => resolve([{ path, file }]),
+        () => resolve([]),
+      );
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      const all: FileSystemEntry[] = [];
+      const readBatch = () => {
+        reader.readEntries(
+          (entries) => {
+            if (entries.length === 0) {
+              Promise.all(all.map((e) => readEntry(e, path ? `${path}/${e.name}` : e.name))).then(
+                (arrs) => resolve(arrs.flat()),
+              );
+            } else {
+              all.push(...entries);
+              readBatch();
+            }
+          },
+          () => resolve([]),
+        );
+      };
+      readBatch();
+    } else {
+      resolve([]);
+    }
+  });
+}
+
+function traverseDataTransfer(dt: DataTransfer): Promise<DirEntry[]> {
+  const items = Array.from(dt.items);
+  const entries = items
+    .map((it) => (it as { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.())
+    .filter((e): e is FileSystemEntry => !!e);
+  if (entries.length === 0) return Promise.resolve([]);
+  return Promise.all(entries.map((e) => readEntry(e, e.name))).then((arrs) => arrs.flat());
+}
 
 const loadImage = (src: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -125,8 +178,12 @@ const readPngInfo = (bytes: Uint8Array): { bitDepth: number; colorType: number }
 };
 
 // 统一压缩管道：所有格式走同一入口「解码 → 编码」，一次成型，无档位、无对比。
-// 编码器按格式选是算法必然，但对外只有一个 compressOne(it) → Blob。
-const compressOne = async (it: Item): Promise<Blob> => {
+// 编码器按格式选是算法必然，但对外只有一个 compressOne(it) → { blob, corrupt }。
+// corrupt=true 表示原文件损坏/被截断，严格编解码器无法处理，已回退到容错编码。
+// keptOriginal=true 表示回退结果比原文件还大，已保留原文件（压缩工具不产出更大的结果）。
+type CompressResult = { blob: Blob; corrupt: boolean; keptOriginal?: boolean };
+
+const compressOne = async (it: Item): Promise<CompressResult> => {
   // ① 解码（所有格式一致）
   const img = await loadImage(it.dataUrl);
   const w = img.naturalWidth;
@@ -138,6 +195,47 @@ const compressOne = async (it: Item): Promise<Blob> => {
   if (!ctx) throw new Error('无法创建画布上下文');
   ctx.drawImage(img, 0, 0, w, h);
 
+  // canvas 兜底编码（对截断/损坏图宽容，能解出部分内容）
+  const canvasPng = () =>
+    new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG 编码失败'))), 'image/png');
+    });
+  const canvasJpeg = () =>
+    new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('JPEG 编码失败'))),
+        'image/jpeg',
+        JPEG_QUALITY / 100,
+      );
+    });
+
+  // 截断/损坏 PNG 的容错回退：优先量化成调色板 PNG（体积小，接近原索引图），
+  // 量化失败再退回 canvas PNG 并过 oxipng 无损优化。
+  // 安全网：回退结果仍比原文件大 → 保留原文件（压缩工具不产出比输入更大的结果）。
+  const fallbackPng = async (): Promise<{ blob: Blob; keptOriginal: boolean }> => {
+    let blob: Blob;
+    try {
+      const quantizer = await getQuantizer();
+      const result = await quantizer.quantizeImageData(ctx.getImageData(0, 0, w, h), PNG_QUANTIZE_OPTS);
+      blob = new Blob([new Uint8Array(result.pngBytes)], { type: 'image/png' });
+    } catch (e) {
+      console.warn('[ImageCompress] 回退量化失败，canvas PNG + oxipng:', it.name, e);
+      const raw = await canvasPng();
+      try {
+        const { optimise } = await getOxipng();
+        const out = await optimise(await raw.arrayBuffer(), { level: 2 });
+        blob = new Blob([out], { type: 'image/png' });
+      } catch {
+        blob = raw;
+      }
+    }
+    if (blob.size > it.file.size) {
+      console.warn('[ImageCompress] 回退结果比原文件大，保留原文件:', it.name);
+      return { blob: it.file, keptOriginal: true };
+    }
+    return { blob, keptOriginal: false };
+  };
+
   // ② 编码（按格式选最佳实践编码器，一次成型）
   if (it.kind === 'png') {
     // 读 IHDR 区分「索引/灰度图」与「真彩照片」
@@ -146,10 +244,17 @@ const compressOne = async (it: Item): Promise<Blob> => {
     const lossless =
       info !== null && (info.bitDepth !== 8 || info.colorType === 0 || info.colorType === 3 || info.colorType === 4);
     if (lossless) {
-      // 索引色 / 灰度图：已是调色板格式，再量化只会变大 → oxipng 无损重压缩（level 2 实测 −8%）
-      const { optimise } = await getOxipng();
-      const out = await optimise(await it.file.arrayBuffer(), { level: 2 });
-      return new Blob([out], { type: 'image/png' });
+      // 索引色 / 灰度图：已是调色板格式，再量化只会变大 → oxipng 无损重压缩（level 2 实测 −8%)
+      try {
+        const { optimise } = await getOxipng();
+        const out = await optimise(await it.file.arrayBuffer(), { level: 2 });
+        return { blob: new Blob([out], { type: 'image/png' }), corrupt: false };
+      } catch (e) {
+        // 截断/损坏的 PNG 会让 oxipng 的 wasm 解码 panic（unwrap_throw failed）→ 回退量化 PNG
+        console.warn('[ImageCompress] oxipng 失败，回退量化 PNG:', it.name, e);
+        const { blob, keptOriginal } = await fallbackPng();
+        return { blob, corrupt: true, keptOriginal };
+      }
     }
     // 真彩 PNG：调色板量化，一次成型（libimagequant 运行在自己的 worker 里，不阻塞主线程）。
     // 优先量化原文件字节（worker 内解码，快）；若 wasm 解码器不支持该 PNG
@@ -157,25 +262,45 @@ const compressOne = async (it: Item): Promise<Blob> => {
     const quantizer = await getQuantizer();
     try {
       const result = await quantizer.quantizePng(it.file, PNG_QUANTIZE_OPTS);
-      return new Blob([new Uint8Array(result.pngBytes)], { type: 'image/png' });
+      return { blob: new Blob([new Uint8Array(result.pngBytes)], { type: 'image/png' }), corrupt: false };
     } catch {
       console.warn('[ImageCompress] wasm 无法解码该 PNG，回退 RGBA 量化:', it.name);
-      const result = await quantizer.quantizeImageData(ctx.getImageData(0, 0, w, h), PNG_QUANTIZE_OPTS);
-      return new Blob([new Uint8Array(result.pngBytes)], { type: 'image/png' });
+      try {
+        const result = await quantizer.quantizeImageData(ctx.getImageData(0, 0, w, h), PNG_QUANTIZE_OPTS);
+        return { blob: new Blob([new Uint8Array(result.pngBytes)], { type: 'image/png' }), corrupt: false };
+      } catch (e) {
+        // 量化也失败（如截断图）→ 回退量化 PNG（含安全网）
+        console.warn('[ImageCompress] 量化失败，回退量化 PNG:', it.name, e);
+        const { blob, keptOriginal } = await fallbackPng();
+        return { blob, corrupt: true, keptOriginal };
+      }
     }
   }
 
   if (it.kind === 'jpeg') {
     // MozJPEG：与 tinyjpg 同源的编码器，同视觉档位下比浏览器 canvas 小得多
-    const { encode } = await getMozJpeg();
-    const out = await encode(ctx.getImageData(0, 0, w, h), { quality: JPEG_QUALITY });
-    return new Blob([out], { type: 'image/jpeg' });
+    try {
+      const { encode } = await getMozJpeg();
+      const out = await encode(ctx.getImageData(0, 0, w, h), { quality: JPEG_QUALITY });
+      return { blob: new Blob([out], { type: 'image/jpeg' }), corrupt: false };
+    } catch (e) {
+      // 截断/损坏的 JPG 会让 MozJPEG 的 wasm 解码 panic → 回退 canvas JPEG
+      console.warn('[ImageCompress] MozJPEG 失败，回退 canvas JPEG:', it.name, e);
+      const blob = await canvasJpeg();
+      // 安全网：回退结果比原文件大 → 保留原文件
+      if (blob.size > it.file.size) {
+        console.warn('[ImageCompress] 回退结果比原文件大，保留原文件:', it.name);
+        return { blob: it.file, corrupt: true, keptOriginal: true };
+      }
+      return { blob, corrupt: true };
+    }
   }
 
-  // WebP：浏览器原生 libwebp 编码（canvas + toBlob）
-  return new Promise<Blob>((resolve, reject) => {
+  // WebP：浏览器原生 libwebp 编码（canvas + toBlob，宽容）
+  const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob 失败'))), 'image/webp', WEBP_QUALITY);
   });
+  return { blob, corrupt: false };
 };
 
 export default function ImageCompress({
@@ -210,16 +335,16 @@ export default function ImageCompress({
   React.useEffect(() => {
     if (flowConsumed.current || !flowInput?.images.length) return;
     flowConsumed.current = true;
-    appendFiles(flowImagesToFiles(flowInput.images));
+    appendFiles(flowImagesToFiles(flowInput.images).map((f) => ({ file: f, relPath: f.name })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flowInput]);
 
   // 文件摄入：SUPPORTED_TYPES 过滤 → 解码 → 构造 Item 推入列表，并触发一次重压
-  const appendFiles = async (files: File[]) => {
-    if (!files.length) return;
+  const appendFiles = async (list: { file: File; relPath: string }[]) => {
+    if (!list.length) return;
     setError(null);
     const next: Item[] = [];
-    for (const file of files) {
+    for (const { file, relPath } of list) {
       const kind = SUPPORTED_TYPES[file.type];
       if (!kind) continue;
       const dataUrl = await readDataUrl(file);
@@ -228,6 +353,7 @@ export default function ImageCompress({
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         file,
         name: file.name,
+        relPath,
         kind,
         origSize: file.size,
         origWidth: img.naturalWidth,
@@ -247,8 +373,23 @@ export default function ImageCompress({
   };
 
   const handleAdd = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    await appendFiles(Array.from(e.target.files ?? []));
+    const files = Array.from(e.target.files ?? []);
     e.target.value = '';
+    if (files.length) await appendFiles(files.map((f) => ({ file: f, relPath: f.name })));
+  };
+
+  const handleAddFolder = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = '';
+    if (files.length) {
+      await appendFiles(
+        files.map((f) => {
+          // webkitdirectory 输入的文件带 webkitRelativePath（含子目录结构）
+          const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath;
+          return { file: f, relPath: rel && rel !== f.name ? rel : f.name };
+        }),
+      );
+    }
   };
 
   const removeAt = (id: string) => {
@@ -288,6 +429,9 @@ export default function ImageCompress({
       outHeight: undefined,
       done: false,
       failed: false,
+      failReason: undefined,
+      corrupt: false,
+      keptOriginal: false,
     }));
     setItems(reset);
     setProgress({ total: list.length, done: 0, currentId: null });
@@ -299,7 +443,7 @@ export default function ImageCompress({
         const src = list[i];
         setProgress({ total: list.length, done: i, currentId: src.id });
         try {
-          const blob = await compressOne(src);
+          const { blob, corrupt, keptOriginal } = await compressOne(src);
           const url = URL.createObjectURL(blob);
           // 尺寸保持原样，仅重编码
           out[i] = {
@@ -310,10 +454,17 @@ export default function ImageCompress({
             outWidth: src.origWidth,
             outHeight: src.origHeight,
             done: true,
+            corrupt,
+            keptOriginal,
           };
         } catch (e) {
           console.error('[ImageCompress] failed', src.name, e);
-          out[i] = { ...out[i], done: true, failed: true };
+          out[i] = {
+            ...out[i],
+            done: true,
+            failed: true,
+            failReason: e instanceof Error ? e.message : '未知错误',
+          };
         }
         if (tokenRef.current !== myToken) return;
         setProgress({ total: list.length, done: i + 1, currentId: null });
@@ -347,7 +498,7 @@ export default function ImageCompress({
     document.body.removeChild(a);
   };
 
-  // 全部打包为一个 ZIP 下载；同名文件自动加序号，避免覆盖
+  // 全部打包为一个 ZIP 下载；保留目录结构（拖入文件夹时），同名文件自动加序号避免覆盖
   const downloadAll = async () => {
     const done = items.filter((it): it is Item & { outBlob: Blob } => !!it.outBlob);
     if (!done.length) return;
@@ -356,10 +507,12 @@ export default function ImageCompress({
     for (const it of done) {
       const ext = extOf(it.name, it.kind);
       const base = it.name.replace(/\.(png|jpe?g|webp)$/i, '');
-      let name = `${base}.${ext}`;
+      // 优先用相对路径（保留目录结构）；多选文件时 relPath 即文件名
+      const dir = it.relPath.includes('/') ? it.relPath.slice(0, it.relPath.lastIndexOf('/') + 1) : '';
+      let name = `${dir}${base}.${ext}`;
       let i = 1;
       while (used.has(name)) {
-        name = `${base}-${i}.${ext}`;
+        name = `${dir}${base}-${i}.${ext}`;
         i++;
       }
       used.add(name);
@@ -381,6 +534,9 @@ export default function ImageCompress({
   const totalOut = items.reduce((s, it) => s + (it.outSize ?? 0), 0);
   const hasOut = items.some((it) => it.outBlob);
   const savedPct = totalOut > 0 ? Math.max(0, Math.round((1 - totalOut / Math.max(totalOrig, 1)) * 100)) : 0;
+  // 处理失败项（用于底部结果总结）
+  const failedItems = items.filter((it) => it.done && it.failed);
+  const failedCount = failedItems.length;
 
   // 结果态串流出口：把已完成项还原为 FlowImage[] 交给 FlowPill（尺寸与原图一致，直接用已有字段）
   const flowImages: FlowImage[] = React.useMemo(
@@ -395,38 +551,29 @@ export default function ImageCompress({
   );
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const folderInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  // 拖入上传：接收 ToolWorkbench 外壳转发的文件列表
-  const handleDrop = async (files: FileList | null) => {
+  // 拖入上传：接收 ToolWorkbench 外壳转发的文件列表；优先用 DataTransfer 遍历文件夹结构
+  const handleDrop = async (files: FileList | null, dt?: DataTransfer) => {
     if (!files) return;
+    if (dt) {
+      try {
+        const dirEntries = await traverseDataTransfer(dt);
+        if (dirEntries.length) {
+          await appendFiles(dirEntries.map((d) => ({ file: d.file, relPath: d.path })));
+          return;
+        }
+      } catch {
+        // 回退到扁平文件列表
+      }
+    }
     const list = Array.from(files).filter((f) => SUPPORTED_TYPES[f.type]);
     if (list.length === 0) {
-      setError('请拖入 PNG / JPG / WebP 图片');
+      setError('请拖入 PNG / JPG / WebP 图片或文件夹');
       return;
     }
     setError(null);
-    const next: Item[] = [];
-    for (const file of list) {
-      const kind = SUPPORTED_TYPES[file.type];
-      const dataUrl = await readDataUrl(file);
-      const img = await loadImage(dataUrl);
-      next.push({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        file,
-        name: file.name,
-        kind,
-        origSize: file.size,
-        origWidth: img.naturalWidth,
-        origHeight: img.naturalHeight,
-        dataUrl,
-      });
-    }
-    setItems((prev) => {
-      const merged = [...prev, ...next];
-      itemsRef.current = merged;
-      queueMicrotask(() => recompress());
-      return merged;
-    });
+    await appendFiles(list.map((f) => ({ file: f, relPath: f.name })));
   };
 
   return (
@@ -458,27 +605,46 @@ export default function ImageCompress({
             cursor: 'pointer',
           }}
         >
-          <Typography variant="body2">上传 PNG / JPG / WebP 开始压缩</Typography>
-          <Button
-            variant="contained"
-            size="small"
-            component="label"
-            startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
-            sx={{ mt: 1 }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            选择图片
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              multiple
-              hidden
-              onChange={handleAdd}
-            />
-          </Button>
+          <Typography variant="body2">上传图片或拖入文件夹开始压缩</Typography>
+          <Stack direction="row" spacing={1.5} sx={{ mt: 1 }}>
+            <Button
+              variant="contained"
+              size="small"
+              component="label"
+              startIcon={<FolderOpenIcon sx={{ fontSize: 16 }} />}
+              onClick={(e) => e.stopPropagation()}
+            >
+              选择文件夹
+              <input
+                ref={folderInputRef}
+                type="file"
+                // @ts-expect-error webkitdirectory 非标准属性
+                webkitdirectory=""
+                multiple
+                hidden
+                onChange={handleAddFolder}
+              />
+            </Button>
+            <Button
+              variant="outlined"
+              size="small"
+              component="label"
+              startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}
+              onClick={(e) => e.stopPropagation()}
+            >
+              选择图片
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                hidden
+                onChange={handleAdd}
+              />
+            </Button>
+          </Stack>
           <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: 11, mt: 0.5 }}>
-            保留原格式
+            保留原格式 · 拖入文件夹时保留目录结构
           </Typography>
         </Box>
       }
@@ -540,6 +706,40 @@ export default function ImageCompress({
               <LinearProgress variant="determinate" value={(progress.done / progress.total) * 100} />
             </Box>
           )}
+          {failedCount > 0 && !working && (
+            <Box
+              sx={{
+                p: 1.25,
+                borderRadius: 1,
+                border: 1,
+                borderColor: 'error.main',
+                bgcolor: 'rgba(211,47,47,0.06)',
+              }}
+            >
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+                <ErrorOutlineIcon sx={{ fontSize: 16, color: 'error.main', mt: 0.25, flexShrink: 0 }} />
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="body2" sx={{ fontSize: 12, color: 'error.main', fontWeight: 600 }}>
+                    {failedCount} 张图片压缩失败
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'text.secondary',
+                      fontSize: 11,
+                      display: 'block',
+                      mt: 0.25,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {failedItems.map((it) => it.name).join('、')}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Box>
+          )}
           {items.length > 0 && (
             <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center', flexWrap: 'wrap', gap: 1 }}>
               <Button variant="outlined" size="small" component="label" startIcon={<UploadFileIcon sx={{ fontSize: 16 }} />}>
@@ -551,6 +751,23 @@ export default function ImageCompress({
                   multiple
                   hidden
                   onChange={handleAdd}
+                />
+              </Button>
+              <Button
+                variant="outlined"
+                size="small"
+                component="label"
+                startIcon={<FolderOpenIcon sx={{ fontSize: 16 }} />}
+              >
+                添加文件夹
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  // @ts-expect-error webkitdirectory 非标准属性
+                  webkitdirectory=""
+                  multiple
+                  hidden
+                  onChange={handleAddFolder}
                 />
               </Button>
               <Tooltip title="清空全部">
@@ -652,7 +869,7 @@ export default function ImageCompress({
                         textOverflow: 'ellipsis',
                       }}
                     >
-                      {it.name}
+                      {it.relPath}
                     </Typography>
                     <Stack
                       direction="row"
@@ -735,6 +952,37 @@ export default function ImageCompress({
                         </Typography>
                       )}
                     </Stack>
+                    {it.failed && it.failReason && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: '#d32f2f',
+                          fontSize: 11,
+                          display: 'block',
+                          mt: 0.5,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {it.failReason}
+                      </Typography>
+                    )}
+                    {it.corrupt && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: 'warning.main',
+                          fontSize: 11,
+                          display: 'block',
+                          mt: 0.5,
+                        }}
+                      >
+                        {it.keptOriginal
+                          ? '原文件已损坏，压缩后体积更大，已保留原文件'
+                          : '原文件已损坏，输出为不完整内容'}
+                      </Typography>
+                    )}
                   </Box>
 
                   {/* 操作 */}

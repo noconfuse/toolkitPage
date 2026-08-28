@@ -51,6 +51,8 @@ type Item = {
   outSize?: number;
   done?: boolean;
   failed?: boolean;
+  // true = 原文件损坏/被截断，已回退 canvas 容错编码（输出为不完整图）
+  corrupt?: boolean;
 };
 
 const ALL_TARGETS: Target[] = ['png', 'jpeg', 'webp'];
@@ -78,8 +80,9 @@ const loadImage = (src: string): Promise<HTMLImageElement> =>
     i.src = src;
   });
 
-// 解码 → 编码，保持原尺寸；JPG 无透明通道，先填白底
-const encode = async (it: Item, target: Target): Promise<Blob> => {
+// 解码 → 编码，保持原尺寸；JPG 无透明通道，先填白底。
+// corrupt=true 表示原文件损坏/被截断，已回退 canvas 容错编码（输出为不完整图）。
+const encode = async (it: Item, target: Target): Promise<{ blob: Blob; corrupt: boolean }> => {
   const img = await loadImage(it.dataUrl);
   const w = img.naturalWidth;
   const h = img.naturalHeight;
@@ -95,18 +98,30 @@ const encode = async (it: Item, target: Target): Promise<Blob> => {
   ctx.drawImage(img, 0, 0, w, h);
 
   if (target === 'png') {
-    return new Promise<Blob>((resolve, reject) => {
+    const blob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG 编码失败'))), 'image/png');
     });
+    return { blob, corrupt: false };
   }
   if (target === 'jpeg') {
-    const { encode } = await getMozJpeg();
-    const out = await encode(ctx.getImageData(0, 0, w, h), { quality: 85 });
-    return new Blob([out], { type: 'image/jpeg' });
+    // MozJPEG：与 tinyjpg 同源的编码器，同视觉档位下比浏览器 canvas 小得多
+    try {
+      const { encode } = await getMozJpeg();
+      const out = await encode(ctx.getImageData(0, 0, w, h), { quality: 85 });
+      return { blob: new Blob([out], { type: 'image/jpeg' }), corrupt: false };
+    } catch (e) {
+      // 截断/损坏的 JPG 会让 MozJPEG 的 wasm 解码 panic → 回退 canvas JPEG（容错）
+      console.warn('[ImageConvert] MozJPEG 失败，回退 canvas JPEG:', it.name, e);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('JPEG 编码失败'))), 'image/jpeg', 0.85);
+      });
+      return { blob, corrupt: true };
+    }
   }
-  return new Promise<Blob>((resolve, reject) => {
+  const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('WebP 编码失败'))), 'image/webp', 0.85);
   });
+  return { blob, corrupt: false };
 };
 
 const extOf = (t: Target): string => (t === 'jpeg' ? 'jpg' : t);
@@ -192,7 +207,7 @@ export default function ImageConvert({
   // 转换单项，返回更新后的 Item
   const processOne = async (it: Item, target: Target): Promise<Item> => {
     try {
-      const blob = await encode(it, target);
+      const { blob, corrupt } = await encode(it, target);
       return {
         ...it,
         outTarget: target,
@@ -201,6 +216,7 @@ export default function ImageConvert({
         outSize: blob.size,
         done: true,
         failed: false,
+        corrupt,
       };
     } catch (e) {
       console.error('[ImageConvert] failed', it.name, e);
@@ -218,7 +234,7 @@ export default function ImageConvert({
     if (list[idx].outUrl) URL.revokeObjectURL(list[idx].outUrl);
     const reset: Item[] = list.map((it, i) =>
       i === idx
-        ? { ...it, outUrl: undefined, outBlob: undefined, outSize: undefined, outTarget: target, done: false, failed: false }
+        ? { ...it, outUrl: undefined, outBlob: undefined, outSize: undefined, outTarget: target, done: false, failed: false, corrupt: false }
         : it,
     );
     setItems(reset);
@@ -248,6 +264,7 @@ export default function ImageConvert({
       outTarget: target,
       done: false,
       failed: false,
+      corrupt: false,
     }));
     setItems(reset);
     setProgress({ total: list.length, done: 0, currentId: null });
@@ -581,6 +598,14 @@ export default function ImageConvert({
                     )}
                   </Typography>
                 </Stack>
+                {it.corrupt && (
+                  <Typography
+                    variant="caption"
+                    sx={{ color: 'warning.main', fontSize: 11, display: 'block', mt: 0.5 }}
+                  >
+                    原文件已损坏，输出为不完整内容
+                  </Typography>
+                )}
               </Box>
 
               <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0, alignItems: 'center' }}>

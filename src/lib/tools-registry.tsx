@@ -5,6 +5,7 @@ import QrCode2Icon from '@mui/icons-material/QrCode2';
 import CropIcon from '@mui/icons-material/Crop';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 
 export type ToolId = string;
 
@@ -166,6 +167,44 @@ export const TOOLS: ReadonlyArray<Tool> = [
       {
         q: '为什么压缩后体积没明显变小？',
         a: '压缩效果因图而异：已优化的图标 / 截图类图片本身空间有限，减少不明显；照片类图片通常能显著减小体积。',
+      },
+    ],
+  },
+  {
+    id: 'image-dedupe',
+    categoryId: 'image',
+    title: '图片去重',
+    shortTitle: '图片去重',
+    href: '/tools/image/dedupe',
+    flow: { input: 'multi', output: 'multi' },
+    description: '拖入图片目录，基于 MD5 与感知哈希找出重复图片，去重后打包 ZIP 下载。',
+    longDescription:
+      '在线图片去重工具：拖入一个图片目录或选择多个图片文件，系统基于 MD5（精确重复）与感知哈希 dHash（近似重复）自动判定目录内是否存在重复图片。可逐组确认保留哪张，最后把去重后的目录打包为 ZIP 下载，保留原目录结构。全部在浏览器内完成。',
+    icon: <ContentCopyIcon />,
+    available: true,
+    keywords: [
+      '图片去重',
+      '重复图片',
+      '图片查重',
+      '去重工具',
+      'MD5去重',
+      '感知哈希',
+      '相似图片',
+      '批量去重',
+      '图片整理',
+    ],
+    faq: [
+      {
+        q: '图片会上传到服务器吗？',
+        a: '不会，MD5 与感知哈希都在你的浏览器内计算，文件不会离开你的设备。',
+      },
+      {
+        q: '精确和近似去重有什么区别？',
+        a: '精确按文件 MD5 判定字节完全一致的重复（同一张图的不同副本）；近似按感知哈希判定内容相近的重复（同一张图的不同压缩、缩放或格式版本）。',
+      },
+      {
+        q: '下载的去重目录会保留原结构吗？',
+        a: '会。拖入文件夹时保留原目录结构，去重后打包为 ZIP 下载；多选文件时按文件名平铺。',
       },
     ],
   },

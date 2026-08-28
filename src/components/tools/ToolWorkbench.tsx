@@ -68,8 +68,8 @@ export interface ToolWorkbenchProps {
   emptyState?: React.ReactNode;
   /** 触发文件选择（点击 Dropzone 时调用） */
   onPickFile?: () => void;
-  /** 拖拽上传处理 */
-  onDrop?: (files: FileList | null) => void;
+  /** 拖拽上传处理（dt 为原始 DataTransfer，需要遍历文件夹结构时使用） */
+  onDrop?: (files: FileList | null, dt?: DataTransfer) => void;
   /** 右栏宽度（默认 300） */
   sidebarWidth?: number;
 }
@@ -167,7 +167,7 @@ export function ToolWorkbench({
     e.preventDefault();
     dragDepth.current = 0;
     setDragActive(false);
-    onDrop(e.dataTransfer.files);
+    onDrop(e.dataTransfer.files, e.dataTransfer);
   };
 
   return (
