@@ -16,6 +16,30 @@ import CloseIcon from '@mui/icons-material/Close';
 
 type Status = 'idle' | 'scanning' | 'error';
 
+/** 把 getUserMedia / 枚举设备的失败原因归类成可读提示 */
+function classifyCameraError(err: unknown): string {
+  const name = (err as DOMException)?.name ?? (err as Error)?.message ?? '';
+  switch (name) {
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return '未检测到摄像头：这台电脑没有摄像头或摄像头未接入。';
+    case 'NotAllowedError':
+    case 'PermissionDeniedError':
+      return '摄像头权限被拒绝：请在浏览器地址栏把摄像头权限设为「允许」后重试。';
+    case 'NotReadableError':
+    case 'AbortError':
+      return '摄像头被其它应用占用或暂时不可用，请关闭占用它的程序后重试。';
+    case 'OverconstrainedError':
+      return '无法调用摄像头：设备与系统摄像头设置不匹配。';
+    case 'SecurityError':
+      return '浏览器禁止访问摄像头：请通过 HTTPS 或 localhost 打开本站。';
+    case 'TypeError':
+      return '当前浏览器不支持摄像头接口，请更换 Chrome / Edge / Safari。';
+    default:
+      return `无法访问摄像头：${name || '未知原因'}，请检查摄像头接入与浏览器权限。`;
+  }
+}
+
 export function QrScannerDialog({
   open,
   onDecoded,
@@ -46,29 +70,6 @@ export function QrScannerDialog({
     const view = videoRef.current;
     if (view) view.srcObject = null;
 
-    navigator.mediaDevices
-      ?.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } })
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        setStatus('scanning');
-        const video = videoRef.current;
-        if (!video) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        video.srcObject = stream;
-        void video.play().catch(() => {});
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setStatus('error');
-        setErrorText('无法访问摄像头：请检查摄像头接入与浏览器权限。');
-      });
-
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     const tick = () => {
@@ -93,7 +94,42 @@ export function QrScannerDialog({
       }
       rafRef.current = requestAnimationFrame(tick);
     };
-    rafRef.current = requestAnimationFrame(tick);
+
+    const start = async () => {
+      try {
+        // 先枚举视频输入设备：没有摄像头时直接给出明确提示，不再白等
+        const devices = await navigator.mediaDevices?.enumerateDevices?.();
+        if (cancelled) return;
+        if (!devices?.some((d) => d.kind === 'videoinput')) {
+          setStatus('error');
+          setErrorText('未检测到摄像头：这台电脑没有摄像头或摄像头未接入。');
+          return;
+        }
+        const stream = await navigator.mediaDevices!.getUserMedia({
+          audio: false,
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        setStatus('scanning');
+        const video = videoRef.current;
+        if (!video) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        video.srcObject = stream;
+        void video.play().catch(() => {});
+        rafRef.current = requestAnimationFrame(tick);
+      } catch (err) {
+        if (cancelled) return;
+        setStatus('error');
+        setErrorText(classifyCameraError(err));
+      }
+    };
+    void start();
 
     return () => {
       cancelled = true;
@@ -153,13 +189,21 @@ export function QrScannerDialog({
                   p: 2,
                 }}
               >
-                <Typography variant="body2" sx={{ color: '#fff' }}>
+                <Typography variant="body2" sx={{ color: '#fff', textAlign: 'center' }}>
                   {status === 'error' ? errorText : '正在启动摄像头…'}
                 </Typography>
                 {status === 'error' && (
-                  <Button size="small" variant="contained" color="inherit" onClick={onClose}>
-                    关闭
-                  </Button>
+                  <>
+                    <Typography
+                      variant="caption"
+                      sx={{ color: '#ffcdb2', textAlign: 'center', maxWidth: 300, lineHeight: 1.6 }}
+                    >
+                      没有摄像头？可让手机/平板端直接「下载 PNG」后传到电脑导入。
+                    </Typography>
+                    <Button size="small" variant="contained" color="inherit" onClick={onClose}>
+                      关闭
+                    </Button>
+                  </>
                 )}
               </Stack>
             )}
