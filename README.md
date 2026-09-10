@@ -2,7 +2,6 @@
 
 一个聚合实用工具的极简站点，**本地优先、零追踪、SEO/GEO 友好**。
 
-> 旧版本基于 React 18 + 自定义 Webpack（SPA），已废弃。  
 > 当前版本基于 **Next.js 14 App Router**，所有页面静态生成，原生支持 SEO / GEO。
 
 ## 已上线的工具
@@ -90,4 +89,10 @@ public/
 
 ## License
 
-MIT
+本项目使用 **MIT License** 开源，Copyright © 2026 Toolkit Page contributors。完整协议见根目录 [LICENSE](./LICENSE) 文件。
+
+- 允许：商用、修改、分发、私用
+- 要求：保留版权声明与许可声明
+- 禁止：责任担保（软件按"原样"提供）
+
+> 站内使用的第三方字体（Geist，SIL OFL 1.1）、图标与第三方依赖（Next.js、React、MUI、pdfjs-dist、jsqr 等）各自保留其版权与许可证，不在本项目 MIT 授权范围内。
