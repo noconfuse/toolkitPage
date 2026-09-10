@@ -20,6 +20,7 @@
     "@mui/material": "^9.2.0",
     "@next/third-parties": "^14.2.0",
     "geist": "^1.7.2",
+    "jsqr": "^1.4.0",
     "jszip": "^3.10.1",
     "libimagequant-wasm": "^0.3.0",
     "next": "14.2.35",

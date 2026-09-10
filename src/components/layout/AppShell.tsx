@@ -18,6 +18,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // 工具页由 tools/layout 自己管理 padding（侧边栏顶到上下两边、右侧内容区自行加内边距），
   // 这里不再给主内容套 padding，避免两处重复。
   const isToolRoute = pathname.startsWith('/tools');
+  // 手机横屏签名页 /sign：完全独立的全屏页面，不套用站内头/尾与宽度容器
+  if (pathname.startsWith('/sign')) {
+    return <Box component="main" sx={{ minHeight: '100vh' }}>{children}</Box>;
+  }
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>

@@ -11,9 +11,6 @@ import Stack from '@mui/material/Stack';
 import Slider from '@mui/material/Slider';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import Dialog from '@mui/material/Dialog';
-import DialogTitle from '@mui/material/DialogTitle';
-import DialogContent from '@mui/material/DialogContent';
 import LinearProgress from '@mui/material/LinearProgress';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -21,7 +18,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlined';
-import DrawIcon from '@mui/icons-material/Draw';
+import ImageIcon from '@mui/icons-material/Image';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { SelectedOverlay } from '@/components/tools/SelectedOverlay';
@@ -32,7 +29,6 @@ import {
   ShortcutList,
   SidebarResourceInfo,
 } from '@/components/tools/ToolWorkbench';
-import { SignaturePad } from './SignaturePad';
 import {
   clampInside,
   computeMove,
@@ -102,7 +98,6 @@ export default function PdfStamp({
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
   const [dragState, setDragState] = React.useState<DragState>({ kind: 'none' });
   const [exporting, setExporting] = React.useState(false);
-  const [signatureMode, setSignatureMode] = React.useState(false);
   const [, setError] = React.useState<string | null>(null);
 
   const surfaceRef = React.useRef<HTMLDivElement | null>(null);
@@ -262,19 +257,14 @@ export default function PdfStamp({
       reader.readAsDataURL(file);
     });
 
-  // 把一张已加载的图直接入栈（落点：右下角，签名场景默认位置）
-  const addLayerFromImage = (
-    img: HTMLImageElement,
-    url: string,
-    name: string,
-    place: 'center' | 'br' = 'center',
-  ) => {
+  // 把一张已加载的图直接入栈（落点：画布居中）
+  const addLayerFromImage = (img: HTMLImageElement, url: string, name: string) => {
     if (!vpSize) return;
     const ratio = Math.min((vpSize.w * 0.6) / img.width, (vpSize.h * 0.6) / img.height);
     const w = img.width * ratio;
     const h = img.height * ratio;
-    const cx = place === 'br' ? vpSize.w - w / 2 - 24 : vpSize.w / 2;
-    const cy = place === 'br' ? vpSize.h - h / 2 - 24 : vpSize.h / 2;
+    const cx = vpSize.w / 2;
+    const cy = vpSize.h / 2;
     const id = `layer-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const layer: StampLayer = {
       id,
@@ -302,21 +292,8 @@ export default function PdfStamp({
     if (!vpSize) return;
     setError(null);
     const { img, url } = await readImage(file);
-    addLayerFromImage(img, url, file.name, 'center');
+    addLayerFromImage(img, url, file.name);
     event.target.value = '';
-  };
-
-  // 手写签名板落点：把 dataURL 当图片加载，落入画布右下角（签名常见位置）
-  const handleSignatureDone = async (pngDataUrl: string) => {
-    if (!vpSize) return;
-    const img = new Image();
-    img.src = pngDataUrl;
-    await new Promise<void>((resolve, reject) => {
-      img.onload = () => resolve();
-      img.onerror = () => reject(new Error('签名图加载失败'));
-    });
-    addLayerFromImage(img, pngDataUrl, `手写签名-${Date.now()}`, 'br');
-    setSignatureMode(false);
   };
 
   // ───────── 鼠标按下（与 ImageCombine 共用同一套检测逻辑） ─────────
@@ -533,7 +510,7 @@ export default function PdfStamp({
 
       for (const l of layers) {
         const bytes = await fetch(l.url).then((r) => r.arrayBuffer());
-        // url 可能是 data:image/png 或 blob:xxx；name 扩展名可能不可靠（如手写签名无扩展名）
+        // url 可能是 data:image/png 或 blob:xxx；name 的扩展名可能不可靠
         const isPng = l.url.startsWith('data:image/png') || l.name.toLowerCase().endsWith('.png');
         const embedded = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
         // 页面像素 → PDF pt（÷ PAGE_RENDER_SCALE），PDF 坐标系为左下原点
@@ -577,8 +554,8 @@ export default function PdfStamp({
       usage={
         <>
           <TipCard
-            icon={<DrawIcon />}
-            text="给 PDF 叠加图片水印或手写签名：选中图层后拖动调整位置，角点缩放、上方手柄旋转，右栏可调透明度并导出。"
+            icon={<ImageIcon />}
+            text="给 PDF 叠加图片或水印：上传图片后选中图层，拖动调整位置，角点缩放、上方手柄旋转，右栏可调透明度并导出。"
           />
           <Box sx={{ mt: 2.5 }}>
             <ShortcutList
@@ -597,7 +574,7 @@ export default function PdfStamp({
           <SidebarTitle>图层 · {layers.length}</SidebarTitle>
           {layers.length === 0 ? (
             <Typography variant="body2" color="text.disabled" sx={{ py: 1, fontSize: 13 }}>
-              还没有叠加层，先在画布上添加图片或手写签名
+              还没有叠加层，先在画布上添加图片
             </Typography>
           ) : (
             <Stack divider={<Box sx={{ borderTop: 1, borderColor: 'divider' }} />}>
@@ -739,20 +716,6 @@ export default function PdfStamp({
                 >
                   叠加图片
                   <input type="file" accept="image/*" hidden onChange={handleOverlayFile} />
-                </Button>
-              </span>
-            </Tooltip>
-            <Tooltip title={pdfFile ? '手写一个签名，自动落为贴图层' : '请先上传 PDF'} placement="top">
-              <span>
-                <Button
-                  variant={signatureMode ? 'contained' : 'outlined'}
-                  size="small"
-                  color={signatureMode ? 'primary' : 'inherit'}
-                  disabled={!pdfFile}
-                  onClick={() => setSignatureMode((v) => !v)}
-                  startIcon={<DrawIcon sx={{ fontSize: 16 }} />}
-                >
-                  {signatureMode ? '收起签名' : '手写签名'}
                 </Button>
               </span>
             </Tooltip>
@@ -932,22 +895,6 @@ export default function PdfStamp({
             )}
           </Box>
         </Box>
-
-      {/* 签名弹窗 */}
-      <Dialog
-        open={signatureMode && !!pdfFile}
-        onClose={() => setSignatureMode(false)}
-        maxWidth="sm"
-        fullWidth
-        slotProps={{ paper: { sx: { borderRadius: 1.5 } } }}
-      >
-        <DialogTitle sx={{ fontSize: 14, fontFamily: 'var(--font-geist-mono)', color: 'text.secondary', py: 1.5 }}>
-          手写签名
-        </DialogTitle>
-        <DialogContent sx={{ pb: 2.5 }}>
-          <SignaturePad onDone={handleSignatureDone} />
-        </DialogContent>
-      </Dialog>
 
     </ToolWorkbench>
   );

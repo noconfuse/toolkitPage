@@ -72,6 +72,20 @@ export function HeroComposition(props: SvgProps) {
 }
 
 // ───────── 工具缩略图 ─────────
+export function ThumbSignature(props: SvgProps) {
+  return (
+    <svg {...baseSvgProps} {...strokeProps} {...props}>
+      <rect x="18" y="22" width="64" height="56" rx="4" opacity="0.3" strokeDasharray="3 2" />
+      {/* 一笔签名的流畅笔锋 */}
+      <path d="M24 52 C28 42 30 34 34 42 C37 48 40 60 44 52 C48 44 50 30 56 44 C60 54 62 58 66 50 C70 42 72 38 74 44" strokeWidth="2.4" />
+      <path d="M30 64 L70 64" opacity="0.4" />
+      {/* 交接码角标：表示扫码同步 */}
+      <rect x="44" y="66" width="20" height="14" rx="2" fill="currentColor" stroke="none" opacity="0.12" />
+      <path d="M50 70 L54 78 M54 78 L58 70 M52 74 L56 74" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
 export function ThumbImageCombine(props: SvgProps) {
   return (
     <svg {...baseSvgProps} {...strokeProps} {...props}>

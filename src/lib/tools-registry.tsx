@@ -6,6 +6,7 @@ import CropIcon from '@mui/icons-material/Crop';
 import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import AutoFixHighIcon from '@mui/icons-material/AutoFixHigh';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import GestureIcon from '@mui/icons-material/Gesture';
 
 export type ToolId = string;
 
@@ -467,6 +468,49 @@ export const TOOLS: ReadonlyArray<Tool> = [
       {
         q: '为什么第一次使用要等一会儿？',
         a: '首次使用需要下载并准备修复能力，加载完成后会保留在本地，之后使用会快很多。',
+      },
+    ],
+  },
+  {
+    id: 'image-signature',
+    categoryId: 'image',
+    title: '电子签名',
+    shortTitle: '签名',
+    href: '/tools/image/signature',
+    flow: { input: 'text', output: 'single' },
+    description: '手写或输入文字生成透明背景签名 PNG，支持手机扫码签名回传。',
+    longDescription:
+      '在线电子签名工具：手写或输入文字生成带透明背景的签名 PNG，导出前自动裁掉四周留白，可直接叠加到文档、图片或 PDF。支持电脑直接书写，也可以用手机扫二维码进入横屏签名页手写，签完电脑摄像头扫描自动回传。全程在浏览器内完成，内容不上传。',
+    icon: <GestureIcon />,
+    available: true,
+    keywords: [
+      '电子签名',
+      '手写签名',
+      '签名生成',
+      '签名工具',
+      '透明签名',
+      '签名PNG',
+      '签名图片',
+      '在线签名',
+      '签名图片生成器',
+      '手机签名',
+    ],
+    faq: [
+      {
+        q: '签名会上传到服务器吗？',
+        a: '不会。签名全程在浏览器内完成，笔迹、二维码、摄像头画面都不会离开你的设备；手机与电脑之间的交接走本地生成二维码 + 电脑扫描，无需网络服务器。',
+      },
+      {
+        q: '导出 PNG 会保留透明背景吗？',
+        a: '会。导出的是透明背景的 PNG，并自动裁掉四周留白，只保留笔迹本身，方便直接叠加到文档、图片或 PDF。',
+      },
+      {
+        q: '手机上写的签名怎么同步到电脑？',
+        a: '在电脑端本工具点「发起手机签名」，用手机扫二维码进入横屏签名页；手机上写好点「生成交接码」，再回到电脑端点「从手机接收」，用摄像头扫描手机屏幕即可自动同步。整个交接过程不走网络。',
+      },
+      {
+        q: '支持哪些字体风格？',
+        a: '文字模式支持原笔、草书、行楷、隶书、仿宋等常用字体，浏览器找不到对应字体时会自动回退到系统字体。',
       },
     ],
   },
