@@ -74,6 +74,8 @@ export default function SignatureTool({
   const [typedText, setTypedText] = React.useState('');
   const [penKey, setPenKey] = React.useState(PEN_WIDTHS[1].key);
   const [strokes, setStrokes] = React.useState<SignatureStroke[]>([]);
+  // 画板逻辑空间：默认 1000×300；从手机接收后切换为手机端的逻辑空间（协议自带宽高）
+  const [space, setSpace] = React.useState<{ w: number; h: number }>({ w: SIG_W, h: SIG_H });
 
   const [inviteOpen, setInviteOpen] = React.useState(false);
   const [inviteUrl, setInviteUrl] = React.useState<string | null>(null);
@@ -111,8 +113,8 @@ export default function SignatureTool({
 
   // ───────── 导出：按内容包围盒自动裁边的透明 PNG ─────────
   const cropped = React.useMemo(
-    () => renderCropPng({ strokes, mode, fontKey, typedText }),
-    [strokes, mode, fontKey, typedText],
+    () => renderCropPng({ strokes, mode, fontKey, typedText }, space.w, space.h),
+    [strokes, mode, fontKey, typedText, space.w, space.h],
   );
 
   const [result, setResult] = React.useState<Output | null>(null);
@@ -139,8 +141,8 @@ export default function SignatureTool({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasContent, cropped]);
 
-  // ───────── 画板容器：按 1000:300 横向比例 contain-fit 撑满 ─────────
-  const [fitRef, fitSize] = useContainSize(SIG_W, SIG_H, true);
+  // ───────── 画板容器：按逻辑空间比例 contain-fit 撑满 ─────────
+  const [fitRef, fitSize] = useContainSize(space.w, space.h, true);
 
   const flowImages: FlowImage[] = React.useMemo(
     () => (result ? [makeFlowImage(result.blob, '签名.png', result.width, result.height)] : []),
@@ -190,7 +192,8 @@ export default function SignatureTool({
       setToast('这个二维码不包含有效的签名笔迹');
       return;
     }
-    setStrokes(decoded);
+    setStrokes(decoded.strokes);
+    setSpace({ w: decoded.width, h: decoded.height });
     setMode('draw');
     setScannerOpen(false);
     setToast('已接收手机签名，自动落到画板');
@@ -445,6 +448,8 @@ export default function SignatureTool({
               fontKey={fontKey}
               typedText={typedText}
               penEnabled={mode === 'draw'}
+              width={space.w}
+              height={space.h}
               onStrokeStart={onStrokeStart}
               onStrokeMove={onStrokeMove}
               onStrokeEnd={onStrokeEnd}

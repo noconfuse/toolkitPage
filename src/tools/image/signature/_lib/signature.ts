@@ -50,25 +50,25 @@ export function lineWidthOf(penKey: string): number {
   return (PEN_WIDTHS.find((p) => p.key === penKey) ?? PEN_WIDTHS[1]).width;
 }
 
-/** 在画布上渲染一份签名草稿（先清空整幅，两种模式二选一） */
-export function renderSignature(ctx: CanvasRenderingContext2D, draft: SignatureDraft): void {
+/** 在画布上渲染一份签名草稿（先清空整幅，两种模式二选一；width/height 为逻辑空间尺寸） */
+export function renderSignature(ctx: CanvasRenderingContext2D, draft: SignatureDraft, width: number, height: number): void {
   const { strokes, mode, fontKey, typedText } = draft;
-  ctx.clearRect(0, 0, SIG_W, SIG_H);
+  ctx.clearRect(0, 0, width, height);
 
   if (mode === 'type') {
     const text = typedText.trim();
     if (!text) return;
     // 字号自适应：先按高度给一个初值，超宽则等比缩小
-    let size = Math.min(SIG_H * 0.72, 190);
+    let size = Math.min(height * 0.72, 190);
     ctx.fillStyle = INK_COLOR;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'center';
     ctx.font = `500 ${size}px ${fontFamilyOf(fontKey)}`;
-    while (size > 24 && ctx.measureText(text).width > SIG_W * 0.9) {
+    while (size > 24 && ctx.measureText(text).width > width * 0.9) {
       size *= 0.92;
       ctx.font = `500 ${size}px ${fontFamilyOf(fontKey)}`;
     }
-    ctx.fillText(text, SIG_W / 2, SIG_H / 2);
+    ctx.fillText(text, width / 2, height / 2);
     return;
   }
 
@@ -127,14 +127,18 @@ export function cropToContent(src: HTMLCanvasElement, pad: number): HTMLCanvasEl
   return out;
 }
 
-/** 把草稿渲染成带透明通道的紧致 PNG（自动裁边 + 16px 留白） */
-export function renderCropPng(draft: SignatureDraft): { canvas: HTMLCanvasElement; width: number; height: number } {
+/** 把草稿渲染成带透明通道的紧致 PNG（按逻辑空间 width×height 渲染 + 自动裁边 + 16px 留白） */
+export function renderCropPng(
+  draft: SignatureDraft,
+  width: number,
+  height: number,
+): { canvas: HTMLCanvasElement; width: number; height: number } {
   const c = document.createElement('canvas');
-  c.width = SIG_W;
-  c.height = SIG_H;
+  c.width = Math.max(1, Math.round(width));
+  c.height = Math.max(1, Math.round(height));
   const ctx = c.getContext('2d');
   if (!ctx) return { canvas: c, width: 0, height: 0 };
-  renderSignature(ctx, draft);
+  renderSignature(ctx, draft, c.width, c.height);
   const cropped = cropToContent(c, 16);
   return { canvas: cropped, width: cropped.width, height: cropped.height };
 }
@@ -206,17 +210,25 @@ function uzz(v: number): number {
 
 /**
  * 把笔迹编码为 base64 载荷。自动加大抽稀阈值直到装进二维码容量。
+ * width/height 为签名时的逻辑空间尺寸，对端按它渲染（保证跨端一致、不拉伸）。
  * 返回 null 表示过于复杂无法装下。
  */
-export function encodeStrokes(strokes: SignatureStroke[]): string | null {
+export function encodeStrokes(
+  strokes: SignatureStroke[],
+  space: { width: number; height: number },
+): string | null {
   const valid = strokes.filter((s) => s.points.length >= 2);
   if (valid.length === 0) return null;
+  const width = Math.max(1, Math.min(65535, Math.round(space.width)));
+  const height = Math.max(1, Math.min(65535, Math.round(space.height)));
 
   const toInt = (pts: Point[]): Point[] => pts.map((p) => ({ x: Math.round(p.x), y: Math.round(p.y) }));
 
   for (const tol of [1, 2, 3.5, 5, 8]) {
     const buf: number[] = [];
     for (let i = 0; i < MAGIC.length; i++) buf.push(MAGIC.charCodeAt(i));
+    pushU16(buf, width);
+    pushU16(buf, height);
     buf.push(valid.length); // stroke 数量（≤255）
 
     let byteLen = buf.length;
@@ -233,6 +245,8 @@ export function encodeStrokes(strokes: SignatureStroke[]): string | null {
     // 正式编码（差分 + zigzag varint）
     const out: number[] = [];
     for (let i = 0; i < MAGIC.length; i++) out.push(MAGIC.charCodeAt(i));
+    pushU16(out, width);
+    pushU16(out, height);
     out.push(valid.length);
     for (const s of valid) {
       const pts = toInt(simplify(s.points, tol));
@@ -257,8 +271,14 @@ export function encodeStrokes(strokes: SignatureStroke[]): string | null {
   return null;
 }
 
-/** 解码扫码得到的 base64，返回笔迹；非法返回 null */
-export function decodeStrokes(base64: string): SignatureStroke[] | null {
+export type DecodedStrokes = {
+  strokes: SignatureStroke[];
+  width: number;
+  height: number;
+};
+
+/** 解码扫码得到的 base64，返回笔迹与逻辑空间；非法返回 null */
+export function decodeStrokes(base64: string): DecodedStrokes | null {
   try {
     const bin = atob(base64.trim());
     const bytes = new Uint8Array(bin.length);
@@ -268,11 +288,13 @@ export function decodeStrokes(base64: string): SignatureStroke[] | null {
       const v = readVarint(bytes, p);
       return v;
     };
-    if (bytes.length < 8) return null;
+    if (bytes.length < 12) return null;
     for (let i = 0; i < MAGIC.length; i++) {
       if (bytes[i] !== MAGIC.charCodeAt(i)) return null;
     }
     p.i = MAGIC.length;
+    const width = readU16(bytes, p);
+    const height = readU16(bytes, p);
     const strokeCount = bytes[p.i++];
     const strokes: SignatureStroke[] = [];
     for (let n = 0; n < strokeCount; n++) {
@@ -290,7 +312,7 @@ export function decodeStrokes(base64: string): SignatureStroke[] | null {
       }
       strokes.push({ points, lineWidth });
     }
-    return strokes.length > 0 ? strokes : null;
+    return strokes.length > 0 ? { strokes, width, height } : null;
   } catch {
     return null;
   }
